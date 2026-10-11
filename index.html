@@ -18,18 +18,76 @@ nav{display:flex;gap:.25rem}nav button{border:1px solid #ffffff33;background:non
 main{max-width:1100px;margin:auto;padding:1.5rem 1rem 3rem}
 #packs{position:relative;left:50%;width:100vw;max-width:none;min-height:calc(100svh - 5rem);margin:-1.5rem 0 -3rem -50vw;padding:2rem 1rem 3rem;display:grid;align-content:center;justify-items:center;text-align:center;gap:.8rem;overflow:hidden;background-color:#26343c;background-image:repeating-radial-gradient(ellipse at 50% 46%,transparent 0 42px,#e9d9b012 43px 44px,transparent 45px 82px),linear-gradient(145deg,#2a3941,#202a31);border-top:1px solid #c89e50;border-bottom:1px solid #c89e50}
 #packs[hidden],#quests[hidden],#album[hidden]{display:none}
-#packs .profile-switch{position:relative;z-index:1;display:flex;gap:3px;padding:3px;border:1px solid #c89e5099;border-radius:6px;background:#111a20aa}#packs .profile-switch button{min-height:36px;border:0;border-radius:4px;background:transparent;color:#f4dfb4;padding:.35rem .9rem;font-size:.86rem;font-weight:700}#packs .profile-switch button[aria-pressed="true"]{background:#d7ad4e!important;color:#261d0d!important}
+#packs .profile-switch{position:relative;z-index:1;display:flex;gap:3px;padding:3px;border:1px solid #c89e5099;border-radius:6px;background:#111a20aa}#packs .profile-switch[hidden]{display:none}#packs .profile-switch button{min-height:36px;border:0;border-radius:4px;background:transparent;color:#f4dfb4;padding:.35rem .9rem;font-size:.86rem;font-weight:700}#packs .profile-switch button[aria-pressed="true"]{background:#d7ad4e!important;color:#261d0d!important}
 #packs h2{position:relative;z-index:1;margin:0 0 .35rem;color:#fff0d1;font-size:1.8rem;text-shadow:0 2px 18px #0008}
 .pack{position:relative;isolation:isolate;width:min(250px,68vw);aspect-ratio:3/4.2;padding:5.5rem .75rem 1.4rem;border:0;border-radius:10px;background:linear-gradient(158deg,#df4033 0 43%,#f2c45b 43% 48%,#2c64a5 48% 100%);color:#fff;display:grid;align-content:center;justify-items:center;gap:.2rem;box-shadow:0 24px 52px #10171dbb,inset 0 0 0 2px #f5d98e,inset 0 0 0 6px #ffffff19;clip-path:polygon(0 3%,5% 0,10% 3%,15% 0,20% 3%,25% 0,30% 3%,35% 0,40% 3%,45% 0,50% 3%,55% 0,60% 3%,65% 0,70% 3%,75% 0,80% 3%,85% 0,90% 3%,95% 0,100% 3%,100% 97%,95% 100%,90% 97%,85% 100%,80% 97%,75% 100%,70% 97%,65% 100%,60% 97%,55% 100%,50% 97%,45% 100%,40% 97%,35% 100%,30% 97%,25% 100%,20% 97%,15% 100%,10% 97%,5% 100%,0 97%);transition:transform .24s,filter .24s}
 .pack::before{position:absolute;z-index:-1;inset:0;background:repeating-linear-gradient(135deg,#ffffff24 0 1px,transparent 1px 8px),linear-gradient(110deg,transparent 15%,#ffffff20 34%,transparent 50%);content:"";opacity:.58}.pack::after{position:absolute;top:15%;left:50%;width:72px;aspect-ratio:1;transform:translateX(-50%);border:3px solid #f5d98e;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 6px,#26343c 6.5px 9px,transparent 9.5px),linear-gradient(180deg,#ffffff1c 0 46%,#26343c 47% 53%,#ffffffde 54% 100%);box-shadow:0 0 0 4px #26343c66,0 4px 15px #1c172555;content:""}
 .pack span,.pack small{position:relative;z-index:1;text-shadow:0 2px 8px #171d27aa}.pack span{font-size:1.5rem;font-weight:800}.pack small{font-size:.9rem;font-weight:700}.pack:disabled{filter:grayscale(.9) brightness(.6);cursor:not-allowed}
 #timer{position:relative;z-index:1;max-width:min(100%,30rem);margin:.15rem 0 0;padding:.4rem .8rem;border:1px solid #f0d28b55;border-radius:4px;background:#111a20aa;color:#f4dfb4;font-size:.85rem;line-height:1.4}
+.auth-gate{min-height:100svh;display:grid;place-items:center;padding:1rem}.auth-panel{width:min(420px,100%);padding:1.25rem;border:1px solid #c89e50;border-radius:8px;background:#142725;color:#f1f3ee;box-shadow:0 18px 50px #0006}.auth-panel h1{margin-bottom:.25rem}.auth-panel>p{margin:.3rem 0 1rem;color:#cbd8d0}.auth-panel form{display:grid;gap:.8rem}.auth-panel label{display:grid;gap:.3rem;font-size:.88rem;font-weight:700}.auth-panel input{width:100%;min-height:44px;border:1px solid #87988c;border-radius:4px;background:#f7f4e9;color:#18231e;padding:.55rem .7rem}.auth-actions{display:flex;gap:.5rem}.auth-actions button,.auth-session button{flex:1;min-height:42px;border:1px solid #e5ce8a;border-radius:4px;background:#d7ad4e;color:#261d0d;padding:.45rem .65rem;font-weight:700}.auth-actions button[type=button]{background:#263a35;color:#f1f3ee}.auth-actions button:disabled,.auth-session button:disabled{opacity:.6}.auth-message{min-height:3em;margin:.8rem 0 0;color:#e8d59d;font-size:.88rem}.auth-session{padding-top:.4rem;border-top:1px solid #ffffff25}.auth-session p{overflow-wrap:anywhere}.auth-session button{width:100%;background:#263a35;color:#f1f3ee}
+.auth-panel [hidden]{display:none!important}
+#authGate .auth-panel .auth-message{color:#53677e}
+#authGate .auth-panel .auth-message[data-error="true"]{color:#b42318}
+.auth-gate{position:fixed;inset:0;z-index:30;min-height:100svh;overflow:auto;display:grid;place-items:center;padding:clamp(1rem,4vw,3.5rem);background-color:#f3f6fb;background-image:radial-gradient(#31496018 1px,transparent 1px);background-size:20px 20px;color:#202a35}
+.auth-gate[hidden]{display:none!important}
+.auth-layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);align-items:center;gap:clamp(2rem,6vw,5rem);width:min(1040px,100%);margin:auto}
+.auth-brand{display:grid;grid-template-columns:minmax(0,1fr) minmax(170px,.8fr);align-items:center;gap:1rem;min-width:0;padding:1rem}
+.auth-brand-copy{position:relative;z-index:1}.auth-kicker{margin:0 0 .6rem;color:#315c9c;font-size:.75rem;font-weight:800;letter-spacing:.1em}
+.auth-brand h1{margin:0;color:#192736;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:clamp(2.3rem,5vw,4.1rem);line-height:1.02}
+.auth-brand-subtitle{max-width:24rem;margin:.8rem 0 0;color:#586675;font-size:1rem}
+.auth-brand-art{display:block;width:100%;max-width:280px;aspect-ratio:1;object-fit:contain;filter:drop-shadow(0 18px 16px #34475a30)}
+.auth-panel{width:100%;max-width:420px;justify-self:end;padding:clamp(1.25rem,3vw,2rem);border:1px solid #dbe2eb;border-radius:8px;background:#fff;box-shadow:0 18px 55px #26374b14;color:#202a35}
+.auth-panel h2{margin:0 0 .35rem;color:#1b2939;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:1.55rem}
+.auth-panel>p{margin:.25rem 0 1rem;color:#657282;font-size:.9rem}
+.auth-panel label{color:#334154;font-size:.82rem;font-weight:700}
+.auth-panel input{border-color:#cbd4df;background:#fff;color:#1e2936}
+.auth-panel input:focus{border-color:#3975cb;outline:3px solid #3975cb2e;outline-offset:1px}
+.auth-actions{display:grid;grid-template-columns:1fr;gap:.55rem;margin-top:.2rem}
+.auth-actions button{width:100%;border:1px solid #245ca8;border-radius:4px;background:#2868bc;color:white}
+.auth-actions button[type=button]{border-color:#d2dbe6;background:#f8fafc;color:#27384c}
+.auth-panel .auth-message{margin:.8rem 0 0;color:#617184;font-size:.82rem}
+.auth-panel .auth-message[data-error="true"]{color:#b53731}
+@media(max-width:700px){.auth-gate{align-items:start;padding:1.1rem}.auth-layout{grid-template-columns:minmax(0,1fr);gap:1rem;width:min(480px,100%)}.auth-brand{grid-template-columns:minmax(0,1fr) 100px;gap:.5rem;padding:.25rem}.auth-brand h1{font-size:2rem}.auth-brand-subtitle{margin:.4rem 0 0;font-size:.86rem}.auth-brand-art{width:100px}.auth-panel{justify-self:stretch;padding:1.2rem}}
+#authGate .auth-panel .auth-actions button[type="submit"]{border-color:#245ca8;background:#2868bc;color:#fff}
+#authGate .auth-panel .auth-actions button[type="button"]{border-color:#d2dbe6;background:#f8fafc;color:#27384c}
+html{color-scheme:light}
+body{background-color:#f3f6fb;background-image:radial-gradient(#31496010 1px,transparent 1px);background-size:20px 20px;color:#202a35}
+.top{background:#fffffff2;border-bottom:1px solid #dbe2eb;backdrop-filter:blur(10px);box-shadow:0 5px 18px #26374b0a}
+.top h1{color:#192736}.top h1 small{color:#315c9c}
+nav button{border-color:#d0dbe8;background:#fff;color:#43546a}
+nav button[aria-current=page]{border-color:#2868bc;background:#2868bc!important;color:#fff!important}
+#packs{background-color:#f3f6fb;background-image:radial-gradient(#31496012 1px,transparent 1px);background-size:20px 20px;border-color:#dbe2eb}
+#packs h2{color:#1d3047;text-shadow:none}
+#timer{border-color:#dbe2eb;background:#fff;color:#53677e}
 </style>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=optional" onload="this.onload=null;this.rel='stylesheet'">
 <link rel="preload" as="style" href="main.css" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="main.css"></noscript>
 </head>
 <body>
+<section id="authGate" class="auth-gate" aria-labelledby="authTitle">
+  <div class="auth-layout">
+    <section class="auth-brand" aria-labelledby="authTitle">
+      <div class="auth-brand-copy">
+        <p class="auth-kicker">KANTO · GENERACIÓN I</p>
+        <h1 id="authTitle">PokéÁlbum</h1>
+        <p class="auth-brand-subtitle">Tu colección, lista para continuar.</p>
+      </div>
+      <img class="auth-brand-art" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" alt="Pikachu" width="280" height="280">
+    </section>
+    <div class="auth-panel">
+      <h2>Inicia sesión</h2>
+      <p>Accede a tu cuenta de entrenador.</p>
+      <form id="authForm">
+        <label>Correo electrónico<input id="authEmail" type="email" autocomplete="username" required></label>
+        <label>Contraseña<input id="authPassword" type="password" autocomplete="current-password" minlength="8" required></label>
+        <div class="auth-actions"><button type="submit">Iniciar sesión</button><button id="signUpButton" type="button">Crear cuenta</button></div>
+      </form>
+      <p id="authMessage" class="auth-message" role="status" aria-live="polite">Conectando con Supabase…</p>
+    </div>
+  </div>
+</section>
+<div id="gameApp" hidden>
 <header class="top">
   <h1>PokéÁlbum <small>Kanto</small></h1>
   <div class="prog" role="group" aria-label="Progreso del álbum">
@@ -41,19 +99,61 @@ main{max-width:1100px;margin:auto;padding:1.5rem 1rem 3rem}
     <button data-tab="packs" aria-current="page">Sobres <b id="packN">0</b></button>
     <button data-tab="quests">Retos <b id="questN">0</b></button>
     <button data-tab="album">Álbum <b id="stickerN">0</b></button>
+    <button data-tab="friends" hidden>Amigos <b id="friendN">0</b></button>
+    <details id="accountMenu">
+      <summary>Cuenta</summary>
+      <div class="account-tools-panel">
+        <p id="authIdentity"></p>
+        <p id="accountStatus" class="account-status" role="status" aria-live="polite"></p>
+        <section class="account-profile" aria-labelledby="usernameTitle">
+          <h2 id="usernameTitle">Perfil</h2>
+          <label for="usernameInput">Nombre de usuario</label>
+          <div class="account-profile-row"><input id="usernameInput" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="nickname" autocapitalize="none" spellcheck="false" required><button id="saveUsernameButton" type="button">Guardar</button></div>
+          <p id="usernameStatus" class="account-status" role="status" aria-live="polite"></p>
+        </section>
+        <details class="account-secondary">
+          <summary>Opciones avanzadas</summary>
+          <div class="account-secondary-content">
+            <details id="adminTestPanel" class="admin-test-panel" hidden>
+              <summary><span id="adminTestTitle">Herramientas de administrador</span><span id="adminModeBadge" class="admin-mode-badge">En línea</span></summary>
+              <div class="admin-tools-body">
+                <button id="toggleDemoModeButton" type="button">Entrar en modo demo</button>
+                <p id="adminModeStatus" class="admin-mode-status" role="status" aria-live="polite">La demo guarda el progreso localmente y no modifica Supabase.</p>
+                <details class="admin-quick-test">
+                  <summary>Generar sobre de prueba</summary>
+                  <button id="adminTestPackButton" type="button">Generar sobre</button>
+                  <div id="adminTestResults" class="rpc-pack-results" aria-live="polite"></div>
+                </details>
+              </div>
+            </details>
+          </div>
+        </details>
+        <button id="signOutButton" type="button">Cerrar sesión</button>
+      </div>
+    </details>
   </nav>
 </header>
 <main>
   <section id="packs" aria-labelledby="h-packs">
-    <div class="profile-switch" role="group" aria-label="Perfil de sobres">
+    <div class="profile-switch" role="group" aria-label="Perfil de sobres" hidden>
       <button type="button" data-profile="normal" aria-pressed="true">Normal</button>
       <button type="button" data-profile="test" aria-pressed="false">Pruebas</button>
     </div>
     <h2 id="h-packs">Abre un sobre</h2>
     <button id="packBtn" class="pack"><span>Sobre Kanto</span><small id="packPrice">5 cartas · 100 monedas</small></button>
     <p id="timer" class="muted"></p>
+    <div class="rpc-helper-controls" hidden>
+      <button id="claimDailyRpcButton" type="button">Probar bono diario · +25 monedas</button>
+      <button id="openPackRpcButton" type="button" disabled>Abrir sobre</button>
+      <div id="packRpcResults" class="rpc-pack-results" aria-live="polite"></div>
+      <div id="cloudAlbumResults" class="rpc-pack-results" aria-live="polite"></div>
+    </div>
   </section>
   <section id="quests" hidden aria-labelledby="h-quests">
+    <div id="cloudMissionResults" class="rpc-pack-results cloud-missions-view" aria-live="polite"></div>
+    <div id="cloudGamesResults" class="rpc-pack-results cloud-games-view" aria-live="polite"></div>
+    <div id="cloudGamePlay" class="cloud-game-play" hidden></div>
+    <div id="cloudMilestoneResults" class="rpc-pack-results cloud-milestones-view" aria-live="polite"></div>
     <div class="quests-inner">
       <header class="quests-heading"><p>ENCARGOS · REGIÓN KANTO</p><h2 id="h-quests">Retos de entrenador</h2></header>
       <section class="daily-card" aria-labelledby="dailyTitle">
@@ -63,6 +163,52 @@ main{max-width:1100px;margin:auto;padding:1.5rem 1rem 3rem}
       <section class="quest-group" aria-labelledby="missionTitle"><h3 id="missionTitle">Misiones de hoy</h3><ul id="missionList" class="mission-list"></ul></section>
       <section class="quest-group minigames" aria-labelledby="gameTitle"><h3 id="gameTitle">Minijuegos diarios</h3><ul id="gameList" class="game-list"></ul><div id="gamePlay" class="game-play" hidden></div></section>
       <section class="quest-group milestones-group" aria-labelledby="milestoneTitle"><h3 id="milestoneTitle">Hitos de colección</h3><ul id="milestoneList" class="milestone-list"></ul></section>
+    </div>
+  </section>
+  <section id="friends" hidden aria-labelledby="h-friends">
+    <div class="friends-inner">
+      <header class="friends-heading">
+        <p>COMUNIDAD · KANTO</p>
+        <h2 id="h-friends">Amigos e intercambios</h2>
+        <p>Busca por nombre de usuario y acuerda intercambios de cartas sueltas.</p>
+        <button id="refreshSocialButton" type="button">Actualizar</button>
+      </header>
+      <p id="socialSetupNotice" class="social-notice" hidden>Define tu nombre de usuario en Cuenta para empezar a conectar con otros entrenadores.</p>
+      <p id="socialDashboardStatus" class="social-status" role="status" aria-live="polite"></p>
+      <section class="social-section" aria-labelledby="friendRequestTitle">
+        <h3 id="friendRequestTitle">Añadir amigo</h3>
+        <form id="friendRequestForm">
+          <label for="friendUsernameInput">Nombre de usuario</label>
+          <div class="social-form-row"><input id="friendUsernameInput" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="off" autocapitalize="none" spellcheck="false" required><button type="submit">Enviar solicitud</button></div>
+        </form>
+        <p id="friendRequestStatus" class="social-status" role="status" aria-live="polite"></p>
+      </section>
+      <section class="social-section" aria-labelledby="incomingFriendTitle">
+        <h3 id="incomingFriendTitle">Solicitudes recibidas</h3>
+        <ul id="incomingFriendList" class="social-list"></ul>
+        <p id="incomingFriendEmpty" class="social-empty">No tienes solicitudes pendientes.</p>
+      </section>
+      <section class="social-section" aria-labelledby="friendsTitle">
+        <h3 id="friendsTitle">Amigos</h3>
+        <ul id="friendList" class="social-list"></ul>
+        <p id="friendsEmpty" class="social-empty">Tu lista de amigos está vacía.</p>
+      </section>
+      <section class="social-section" aria-labelledby="tradeOfferTitle">
+        <h3 id="tradeOfferTitle">Proponer intercambio</h3>
+        <p>Solo se intercambian cartas sueltas; las pegadas permanecen en el álbum.</p>
+        <form id="tradeOfferForm" class="trade-form">
+          <label for="tradeFriendSelect">Amigo<select id="tradeFriendSelect" required><option value="">Selecciona un amigo</option></select></label>
+          <label for="tradeOfferedCard">Ofreces<select id="tradeOfferedCard" required disabled><option value="">Elige primero un amigo</option></select></label>
+          <label for="tradeRequestedCard">Solicitas<select id="tradeRequestedCard" required disabled><option value="">Elige primero un amigo</option></select></label>
+          <button id="sendTradeButton" type="submit" disabled>Enviar oferta</button>
+        </form>
+        <p id="tradeStatus" class="social-status" role="status" aria-live="polite"></p>
+      </section>
+      <section class="social-section" aria-labelledby="tradeHistoryTitle">
+        <h3 id="tradeHistoryTitle">Ofertas pendientes</h3>
+        <ul id="tradeList" class="social-list"></ul>
+        <p id="tradesEmpty" class="social-empty">No tienes ofertas de intercambio pendientes.</p>
+      </section>
     </div>
   </section>
   <section id="album" hidden aria-labelledby="h-album">
@@ -97,8 +243,9 @@ main{max-width:1100px;margin:auto;padding:1.5rem 1rem 3rem}
   <div class="row"><button id="close" hidden>Continuar</button></div>
 </div>
 <div id="toast" class="toast" aria-live="polite" aria-atomic="true"></div>
-<dialog id="detail"><form method="dialog"><div id="detailBody"></div><div class="detail-actions"><button id="placeSticker" type="button" hidden>Pegar en el álbum</button><button id="removeSticker" type="button" hidden>Quitar estampa</button><button class="detail-close">Cerrar</button></div></form></dialog>
+<dialog id="detail" aria-labelledby="detailTitle"><form method="dialog"><div id="detailBody"></div><div class="detail-actions"><button id="placeSticker" type="button" hidden>Pegar en el álbum</button><button id="removeSticker" type="button" hidden>Quitar estampa</button><button class="detail-close">Cerrar</button></div></form></dialog>
 <p id="live" class="sr" aria-live="polite"></p>
-<script src="app.js" defer></script>
+</div>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

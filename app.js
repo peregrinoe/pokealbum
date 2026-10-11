@@ -1,13 +1,756 @@
+import { supabase } from './supabase.js';
+
 'use strict';
 const API='https://pokeapi.co/api/v2/pokemon/', TOTAL=151, LEG=[144,145,146,150,151];
 const PROFILES={normal:{baseShinyChance:.03,unlimited:false},test:{baseShinyChance:.5,unlimited:true}};
 const PACK_COST=100, DAILY_BASE=25, DAILY_STEP=15, DAILY_MAX=130;
 const SHINY_UPGRADE_REWARD=25, REPEAT_SALE_VALUE={normal:10,shiny:25};
+const CLOUD_MISSION_LABELS={open_pack_1:'Abre 1 sobre',open_pack_3:'Abre 3 sobres',place_3:'Pega 3 estampas',place_6:'Pega 6 estampas',shiny_1:'Consigue una estampa shiny',sell_1:'Vende 1 repetida',sell_3:'Vende 3 repetidas',shiny_upgrade_1:'Mejora una estampa normal a shiny',type_correct_3:'Acierta 3 tipos en el minijuego',guess_correct_3:'Adivina 3 Pokémon',game_complete_1:'Completa un minijuego'};
+const CLOUD_GAME_LABELS={types:'Tipo relámpago',silhouette:'Silueta misteriosa'};
+const CLOUD_GAME_DESCRIPTIONS={types:'Identifica el tipo principal de 5 Pokémon.',silhouette:'Reconoce 5 Pokémon por su silueta.'};
+const CLOUD_MILESTONE_LABELS={p10:'Pega 10 estampas',page1:'Completa una página de 9 espacios',p25:'Pega 25 estampas',shiny1:'Consigue una estampa shiny',p50:'Pega 50 estampas',p100:'Pega 100 estampas',full:'Completa el álbum de Kanto'};
 const ART=id=>`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 const SHINY_ART=id=>`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png`;
 const imageFor=(p,shiny=false)=>shiny?(p.shinyArt||SHINY_ART(p.id)):(p.art||ART(p.id));
 const $=s=>document.querySelector(s), rnd=n=>Math.floor(Math.random()*n);
-const KEY='pokealbum-v2';
+const authForm=$('#authForm'), authMessage=$('#authMessage');
+let playerStateCheck=0, cloudPlayerState=null, isSuperAdmin=false, cloudMode=false, demoMode=false;
+let currentUserId=null,currentUsername='';
+let usernameChangeCost=null;
+let socialDashboardLoading=false;
+function updateOpenPackLabel(){
+  const button=$('#openPackRpcButton'); if(!button)return;
+  button.disabled=!cloudPlayerState;
+  button.textContent=cloudPlayerState?.starter_packs>0
+    ?`Abrir sobre gratis · ${cloudPlayerState.starter_packs} restantes`
+    :'Abrir sobre · 100 monedas';
+}
+function updateDailyBonusButton(){
+  const button=$('#claimDailyRpcButton');if(!button)return;
+  const today=new Date().toISOString().slice(0,10),yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const claimed=cloudPlayerState?.last_daily===today;
+  const streak=cloudPlayerState?.last_daily===yesterday?(cloudPlayerState.daily_streak||0)+1:1;
+  const reward=Math.min(130,25+(streak-1)*15);
+  button.disabled=!cloudPlayerState||claimed;
+  button.textContent=claimed?'Bono diario reclamado':`Reclamar bono · +${reward} monedas`;
+}
+function updateTestControls(){
+  const profileSwitch=$('.profile-switch');
+  if(profileSwitch)profileSwitch.hidden=cloudMode||demoMode||!isSuperAdmin;
+  $('#adminTestPanel').hidden=!isSuperAdmin;
+  $('#toggleDemoModeButton').textContent=demoMode?'Volver al modo en línea':'Entrar en modo demo';
+  $('#adminModeBadge').textContent=demoMode?'Demo activa':'En línea';
+  $('#adminModeStatus').textContent=demoMode?'La demo usa progreso local separado; Supabase sigue intacto.':'La demo usa progreso local separado y no modifica Supabase.';
+}
+function setCloudReadOnlyView(enabled){
+  cloudMode=enabled;
+  const appVisible=enabled||demoMode;
+  $('#authGate').classList.toggle('signed-in',appVisible);
+  $('#authGate').hidden=appVisible;
+  $('#gameApp').hidden=!appVisible;
+  ['#claimDailyRpcButton','#openPackRpcButton','#packRpcResults','#cloudAlbumResults'].forEach(selector=>{
+    $(selector).hidden=enabled;
+  });
+  ['#cloudMissionResults','#cloudGamesResults','#cloudMilestoneResults'].forEach(selector=>{
+    $(selector).hidden=!enabled;
+  });
+  if(!enabled)$('#cloudGamePlay').hidden=true;
+  $('#packBtn').disabled=enabled&&(!cloudPlayerState||(cloudPlayerState.starter_packs<1&&cloudPlayerState.coins<PACK_COST));
+  $('#clearCollection').hidden=enabled;
+  $('[data-tab="quests"]').hidden=!enabled;
+  $('[data-tab="friends"]').hidden=!enabled;
+  if(!enabled)$('#friends').hidden=true;
+  $('#quests .quests-inner').hidden=enabled;
+  if(enabled){
+    $('#quests').hidden=true;
+    $('#timer').textContent='Vista remota de solo lectura; abre sobres y gestiona el inventario desde las acciones seguras de arriba.';
+  }
+  updateTestControls();
+}
+async function loadCloudMissions(){
+  const {data,error}=await supabase.rpc('get_daily_missions');
+  if(error)return {error};
+  const results=$('#cloudMissionResults'),pageHeading=document.createElement('header'),pageKicker=document.createElement('p'),pageTitle=document.createElement('h1'),dailyCard=document.createElement('section'),dailyHeading=document.createElement('h2'),dailyText=document.createElement('p'),dailyButton=document.createElement('button');
+  pageHeading.className='cloud-quests-heading';pageKicker.textContent='ENCARGOS · REGIÓN KANTO';pageTitle.textContent='Retos de entrenador';pageHeading.append(pageKicker,pageTitle);
+  const today=new Date().toISOString().slice(0,10),yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const dailyClaimed=cloudPlayerState?.last_daily===today;
+  const streak=cloudPlayerState?.last_daily===yesterday?(cloudPlayerState.daily_streak||0)+1:1;
+  const dailyRewardAmount=Math.min(130,25+(streak-1)*15);
+  dailyCard.className='cloud-daily-card';dailyHeading.textContent='Bono diario';
+  dailyText.textContent=dailyClaimed?`Reclamado · racha ${cloudPlayerState.daily_streak} día${cloudPlayerState.daily_streak===1?'':'s'}`:`Reclama ${dailyRewardAmount} monedas · racha ${streak} día${streak===1?'':'s'}`;
+  dailyButton.type='button';dailyButton.className='cloud-daily-button';dailyButton.disabled=dailyClaimed;
+  dailyButton.textContent=dailyClaimed?'Reclamado':`Reclamar · +${dailyRewardAmount} ◉`;
+  dailyButton.onclick=()=>claimCloudDailyBonus(dailyButton);
+  dailyCard.append(dailyHeading,dailyText,dailyButton);
+  const heading=document.createElement('h2'),list=document.createElement('ul');
+  heading.textContent='Misiones de hoy';list.className='cloud-mission-list';
+  data.forEach(mission=>{
+    const progress=Math.min(mission.progress,mission.goal),claimed=!!mission.claimed_at,complete=progress>=mission.goal;
+    const item=document.createElement('li'),details=document.createElement('div'),title=document.createElement('b'),status=document.createElement('span'),track=document.createElement('span'),fill=document.createElement('i'),reward=document.createElement('b'),button=document.createElement('button');
+    item.className='cloud-mission';if(complete)item.classList.add('complete');if(claimed)item.classList.add('claimed');
+    title.textContent=CLOUD_MISSION_LABELS[mission.mission_key]||'Misión diaria';
+    status.textContent=claimed?'Reclamada':`${progress} / ${mission.goal}`;
+    track.className='cloud-mission-track';fill.style.width=`${progress/mission.goal*100}%`;track.append(fill);
+    reward.className='cloud-mission-reward';reward.textContent=`${mission.reward} ◉`;
+    button.type='button';button.className='cloud-mission-claim';button.disabled=claimed||!complete;
+    button.textContent=claimed?'Reclamada':complete?'Reclamar':'En curso';
+    button.onclick=()=>claimCloudMission(mission.mission_key,button);
+    details.className='cloud-mission-details';details.append(title,status,track);
+    item.append(details,reward,button);list.append(item);
+  });
+  results.replaceChildren(pageHeading,dailyCard,heading,list);
+  const ready=Number(!dailyClaimed)+data.filter(mission=>!mission.claimed_at&&mission.progress>=mission.goal).length;
+  const badge=$('[data-tab="quests"] b');if(badge)badge.textContent=String(ready);
+  return {error:null};
+}
+async function claimCloudDailyBonus(button){
+  button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Reclamando el bono diario en Supabase…';
+  const {data,error}=await supabase.rpc('claim_daily_bonus');
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo reclamar el bono: ${error.message}`;button.disabled=false;return}
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado del bono.';button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:result.coins,daily_streak:result.daily_streak,last_daily:result.last_daily};
+  S.coins=result.coins;tick();updateOpenPackLabel();updateDailyBonusButton();await loadCloudMissions();
+  authMessage.textContent=`Bono reclamado: +${result.reward} monedas. Saldo en Supabase: ${result.coins}.`;
+}
+async function claimCloudMission(missionKey,button){
+  button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Reclamando misión en Supabase…';
+  const {data,error}=await supabase.rpc('claim_daily_mission',{p_mission_key:missionKey});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo reclamar la misión: ${error.message}`;button.disabled=false;return}
+  const reward=Array.isArray(data)?data[0]:data;
+  if(!reward){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado de la misión.';button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:reward.coins_balance};
+  S.coins=reward.coins_balance;tick();
+  const refresh=await loadCloudMissions();
+  updateOpenPackLabel();
+  authMessage.textContent=refresh.error?`Misión reclamada: +${reward.reward} monedas. Saldo: ${reward.coins_balance}.`:`Misión reclamada: +${reward.reward} monedas. Saldo en Supabase: ${reward.coins_balance}.`;
+}
+async function loadCloudGames(){
+  const {data,error}=await supabase.rpc('get_daily_games');
+  const results=$('#cloudGamesResults');
+  if(error){const heading=document.createElement('h2'),message=document.createElement('p');heading.textContent='Minijuegos diarios';message.textContent='Activa la migración cloud de minijuegos para jugar aquí.';results.replaceChildren(heading,message);return {error}}
+  const sessions=new Map(data.map(game=>[game.game_key,game]));
+  const heading=document.createElement('h2'),list=document.createElement('ul');
+  heading.textContent='Minijuegos diarios';list.className='cloud-game-list';
+  Object.entries(CLOUD_GAME_LABELS).forEach(([key,label])=>{
+    const session=sessions.get(key),completed=!!session?.claimed_at,item=document.createElement('li'),details=document.createElement('div'),title=document.createElement('strong'),description=document.createElement('p'),button=document.createElement('button');
+    item.className='cloud-game';title.textContent=label;
+    description.textContent=session?`${session.answered_count} / 5 rondas · ${session.correct_count} aciertos`:CLOUD_GAME_DESCRIPTIONS[key];
+    button.type='button';button.disabled=completed;button.textContent=completed?'Jugado hoy':session?.answered_count?'Continuar':'Jugar';
+    button.onclick=()=>startCloudGame(key);
+    details.append(title,description);item.append(details,button);list.append(item);
+  });
+  results.replaceChildren(heading,list);
+  return {error:null};
+}
+async function startCloudGame(gameKey){
+  authMessage.dataset.error='';authMessage.textContent='Preparando minijuego…';
+  const {data,error}=await supabase.rpc('start_daily_game',{p_game_key:gameKey});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo iniciar el minijuego: ${error.message}`;return}
+  const question=Array.isArray(data)?data[0]:data;
+  if(!question){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió una pregunta.';return}
+  if(question.game_complete){await loadCloudGames();$('#cloudGamePlay').hidden=true;authMessage.textContent='Ese minijuego ya fue completado hoy.';return}
+  renderCloudGameQuestion(gameKey,question);
+  await loadCloudGames();
+}
+function renderCloudGameQuestion(gameKey,question){
+  const area=$('#cloudGamePlay');area.replaceChildren();area.hidden=false;
+  const progress=document.createElement('p'),title=document.createElement('h3');
+  progress.textContent=`Ronda ${question.round_number} de 5 · Aciertos: ${question.correct_count}`;
+  title.textContent=gameKey==='types'?'¿Cuál es el tipo principal?':'¿Qué Pokémon se esconde en la silueta?';
+  area.append(progress,title);
+  if(gameKey==='silhouette'){
+    const image=document.createElement('img');image.className='cloud-game-silhouette';image.src=ART(question.pokemon_id);image.alt='Silueta de un Pokémon';area.append(image);
+  }else{
+    const name=document.createElement('p');name.textContent=`Pokémon #${String(question.pokemon_id).padStart(3,'0')}`;area.append(name);
+    info(question.pokemon_id).then(p=>{name.textContent=`${p.name} · #${String(p.id).padStart(3,'0')}`}).catch(()=>{});
+  }
+  const options=document.createElement('div');options.className='cloud-game-options';
+  question.choices.forEach(choice=>{
+    const button=document.createElement('button');button.type='button';button.className='cloud-game-option';
+    button.textContent=gameKey==='types'?(TYPE_LABELS[choice]||choice):`#${String(choice).padStart(3,'0')}`;
+    button.onclick=()=>answerCloudGame(gameKey,question,choice,options);
+    if(gameKey==='silhouette')info(Number(choice)).then(p=>{button.textContent=p.name}).catch(()=>{});
+    options.append(button);
+  });
+  area.append(options);
+}
+async function answerCloudGame(gameKey,question,choice,options){
+  options.querySelectorAll('button').forEach(button=>button.disabled=true);
+  authMessage.dataset.error='';authMessage.textContent='Validando respuesta en Supabase…';
+  const {data,error}=await supabase.rpc('answer_daily_game',{p_game_key:gameKey,p_choice:String(choice)});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo validar la respuesta: ${error.message}`;options.querySelectorAll('button').forEach(button=>button.disabled=false);return}
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado de la ronda.';options.querySelectorAll('button').forEach(button=>button.disabled=false);return}
+  options.querySelectorAll('button').forEach(button=>{
+    if(button.dataset.choice===String(result.correct_choice))button.classList.add('correct');
+    else if(button.dataset.choice===String(choice))button.classList.add('incorrect');
+  });
+  const correctLabel=gameKey==='types'?(TYPE_LABELS[result.correct_choice]||result.correct_choice):result.correct_choice;
+  const feedback=document.createElement('p');feedback.textContent=result.is_correct?'¡Correcto!':`Respuesta correcta: ${correctLabel}`;$('#cloudGamePlay').append(feedback);
+  if(result.game_complete){
+    cloudPlayerState={...cloudPlayerState,coins:result.coins_balance};S.coins=result.coins_balance;tick();updateOpenPackLabel();
+    await loadCloudMissions();await loadCloudGames();
+    feedback.textContent=`Minijuego completado · ${result.correct_count}/5 aciertos · +${result.reward} monedas.`;
+    authMessage.textContent=`Recompensa validada en Supabase. Saldo: ${result.coins_balance} monedas.`;return;
+  }
+  const next=document.createElement('button');next.type='button';next.className='cloud-game-option';next.textContent='Siguiente ronda';
+  next.onclick=()=>startCloudGame(gameKey);$('#cloudGamePlay').append(next);
+  await loadCloudMissions();authMessage.textContent=`Respuesta ${result.is_correct?'correcta':'registrada'} · ${result.correct_count}/5 aciertos.`;
+}
+async function loadCloudMilestones(){
+  const {data,error}=await supabase.rpc('get_collection_milestones');
+  const results=$('#cloudMilestoneResults');
+  if(error){const heading=document.createElement('h2'),message=document.createElement('p');heading.textContent='Hitos de colección';message.textContent='Activa la migración cloud de hitos para consultar y reclamar recompensas.';results.replaceChildren(heading,message);return {error}}
+  const heading=document.createElement('h2'),list=document.createElement('ul');
+  heading.textContent='Hitos de colección';list.className='cloud-milestone-list';
+  data.forEach(milestone=>{
+    const claimed=!!milestone.claimed_at,complete=milestone.progress>=milestone.goal,item=document.createElement('li'),label=document.createElement('strong'),reward=document.createElement('span'),button=document.createElement('button');
+    item.className='cloud-milestone';if(complete)item.classList.add('done');if(claimed)item.classList.add('claimed');
+    label.textContent=`${CLOUD_MILESTONE_LABELS[milestone.milestone_key]||milestone.label} · ${milestone.progress}/${milestone.goal}`;
+    reward.textContent=`${milestone.reward} ◉`;button.type='button';button.disabled=claimed||!complete;
+    button.textContent=claimed?'Reclamado':complete?'Reclamar':'En curso';button.onclick=()=>claimCloudMilestone(milestone.milestone_key,button);
+    item.append(label,reward,button);list.append(item);
+  });
+  results.replaceChildren(heading,list);return {error:null};
+}
+async function claimCloudMilestone(milestoneKey,button){
+  button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Validando hito en Supabase…';
+  const {data,error}=await supabase.rpc('claim_collection_milestone',{p_milestone_key:milestoneKey});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo reclamar el hito: ${error.message}`;button.disabled=false;return}
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado del hito.';button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:result.coins_balance};S.coins=result.coins_balance;tick();updateOpenPackLabel();
+  await loadCloudMilestones();authMessage.textContent=`Hito reclamado: +${result.reward} monedas. Saldo: ${result.coins_balance}.`;
+}
+async function loadCloudInventory(){
+  const [{data:gameInventory,error:inventoryError},{data:slots,error:slotsError},{data:legacyInventory,error:legacyError}]=await Promise.all([
+    supabase.from('sticker_inventory').select('pokemon_id,is_shiny,quantity').order('pokemon_id').order('is_shiny'),
+    supabase.from('album_slots').select('pokemon_id,is_shiny,source'),
+    supabase.from('legacy_sticker_inventory').select('pokemon_id,is_shiny,quantity').order('pokemon_id').order('is_shiny')
+  ]);
+  if(inventoryError||slotsError||legacyError)return {error:inventoryError||slotsError||legacyError};
+  const inventoryByVariant=new Map();
+  gameInventory.forEach(card=>inventoryByVariant.set(`${card.pokemon_id}:${card.is_shiny}`,{
+    ...card,source:'game',gameQuantity:card.quantity,legacyQuantity:0
+  }));
+  legacyInventory.forEach(card=>{
+    const key=`${card.pokemon_id}:${card.is_shiny}`,existing=inventoryByVariant.get(key);
+    if(existing){existing.quantity+=card.quantity;existing.legacyQuantity=card.quantity}
+    else inventoryByVariant.set(key,{...card,source:'legacy',gameQuantity:0,legacyQuantity:card.quantity});
+  });
+  const inventory=[...inventoryByVariant.values()];
+  S.profile='normal';
+  S.coins=cloudPlayerState?.coins??S.coins;
+  S.starterPacks=cloudPlayerState?.starter_packs??S.starterPacks;
+  S.owned={};S.stickers={};S.shinyOwned={};S.shinyStickers={};
+  inventory.forEach(card=>{
+    const target=card.is_shiny?S.shinyStickers:S.stickers;
+    target[card.pokemon_id]=card.quantity;
+  });
+  slots.forEach(slot=>{
+    S.owned[slot.pokemon_id]=1;
+    if(slot.is_shiny)S.shinyOwned[slot.pokemon_id]=1;
+  });
+  tick();updateProgress();
+  if(cloudMode)renderAlbum();
+  const results=$('#packRpcResults'),heading=document.createElement('h2'),list=document.createElement('ul');
+  heading.textContent='Inventario guardado en Supabase';list.className='rpc-pack-list';
+  const slotsById=new Map(slots.map(slot=>[slot.pokemon_id,slot]));
+  const gameQuantitiesById=new Map();
+  gameInventory.forEach(card=>gameQuantitiesById.set(card.pokemon_id,(gameQuantitiesById.get(card.pokemon_id)||0)+card.quantity));
+  inventory.forEach(card=>{
+    const item=document.createElement('li'),image=document.createElement('img'),name=document.createElement('span'),quantity=document.createElement('small'),placeButton=document.createElement('button'),sellButton=document.createElement('button');
+    item.dataset.pokemonId=String(card.pokemon_id);item.dataset.shiny=String(card.is_shiny);
+    image.src=card.is_shiny?SHINY_ART(card.pokemon_id):ART(card.pokemon_id);image.alt='';image.loading='lazy';
+    name.textContent=`#${String(card.pokemon_id).padStart(3,'0')}${card.is_shiny?' · SHINY':''}`;
+    quantity.textContent=`×${card.quantity}${card.legacyQuantity?` (${card.gameQuantity} cloud + ${card.legacyQuantity} local)`:card.source==='legacy'?' · local importada':''}`;
+    const slot=slotsById.get(card.pokemon_id),canPlace=!slot||(!slot.is_shiny&&card.is_shiny);
+    placeButton.type='button';placeButton.className='rpc-place-sticker';
+    placeButton.textContent=slot?.is_shiny?'Pegada':canPlace?(slot?'Mejorar · +25 ◉':'Pegar'):'Espacio ocupado';
+    placeButton.disabled=!canPlace;
+    placeButton.setAttribute('aria-label',`${canPlace?'Pegar':'Espacio ocupado'} estampa ${card.is_shiny?'shiny ':''}#${card.pokemon_id}`);
+    if(canPlace)placeButton.onclick=()=>placeCloudSticker(card.pokemon_id,card.is_shiny,placeButton);
+    const canSell=card.source==='game'&&(!!slot||(gameQuantitiesById.get(card.pokemon_id)||0)>1);
+    sellButton.type='button';sellButton.className='rpc-sell-sticker';
+    sellButton.textContent=card.source==='legacy'?'Importada · no vendible':`Vender · ${card.is_shiny?25:10} ◉`;sellButton.disabled=!canSell;
+    sellButton.setAttribute('aria-label',`${canSell?'Vender':card.source==='legacy'?'Importada no vendible':'No repetida'} estampa ${card.is_shiny?'shiny ':''}#${card.pokemon_id} por ${card.is_shiny?25:10} monedas`);
+    if(canSell)sellButton.onclick=()=>sellCloudSticker(card.pokemon_id,card.is_shiny,sellButton);
+    item.append(image,name,quantity,placeButton,sellButton);list.append(item);
+    info(card.pokemon_id).then(p=>{name.textContent=`#${String(card.pokemon_id).padStart(3,'0')} ${p.name}${card.is_shiny?' · SHINY':''}`}).catch(()=>{});
+  });
+  if(!inventory.length){const empty=document.createElement('p');empty.textContent='Tu inventario remoto aún no tiene estampas.';results.replaceChildren(heading,empty)}
+  else results.replaceChildren(heading,list);
+  const albumResults=$('#cloudAlbumResults'),albumHeading=document.createElement('h2'),albumList=document.createElement('ul');
+  albumHeading.textContent=`Álbum en Supabase · ${slots.length} / 151`;albumList.className='rpc-pack-list';
+  slots.forEach(slot=>{
+    const item=document.createElement('li'),image=document.createElement('img'),name=document.createElement('span'),removeButton=document.createElement('button');
+    image.src=slot.is_shiny?SHINY_ART(slot.pokemon_id):ART(slot.pokemon_id);image.alt='';image.loading='lazy';
+    name.textContent=`#${String(slot.pokemon_id).padStart(3,'0')}${slot.is_shiny?' · SHINY':''}`;
+    removeButton.type='button';removeButton.className='rpc-remove-sticker';removeButton.textContent='Quitar';
+    removeButton.setAttribute('aria-label',`Quitar estampa ${slot.is_shiny?'shiny ':''}#${slot.pokemon_id}`);
+    removeButton.onclick=()=>removeCloudSticker(slot.pokemon_id,removeButton);
+    item.append(image,name,removeButton);albumList.append(item);
+    info(slot.pokemon_id).then(p=>{name.textContent=`#${String(slot.pokemon_id).padStart(3,'0')} ${p.name}${slot.is_shiny?' · SHINY':''}`}).catch(()=>{});
+  });
+  if(!slots.length){const empty=document.createElement('p');empty.textContent='Aún no has pegado estampas.';albumResults.replaceChildren(albumHeading,empty)}
+  else albumResults.replaceChildren(albumHeading,albumList);
+  return {error:null};
+}
+async function placeCloudSticker(pokemonId,isShiny,button=null){
+  if(button)button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Pegando estampa de forma segura…';
+  const {data,error}=await supabase.rpc('place_sticker',{p_pokemon_id:pokemonId,p_is_shiny:isShiny});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo pegar la estampa: ${error.message}`;if(button)button.disabled=false;return}
+  const placement=Array.isArray(data)?data[0]:data;
+  if(!placement){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado del pegado.';if(button)button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:placement.coins_balance};
+  await loadCloudInventory();
+  await Promise.all([loadCloudMissions(),loadCloudMilestones()]);
+  authMessage.textContent=`Estampa ${isShiny?'shiny ':''}#${String(pokemonId).padStart(3,'0')} pegada.${placement.shiny_upgrade_reward?` Mejora shiny: +${placement.shiny_upgrade_reward} monedas.`:''} Saldo en Supabase: ${placement.coins_balance}.`;
+}
+async function placeAllCloudStickers(){
+  const button=$('#placeAll');button.disabled=true;authMessage.dataset.error='';
+  authMessage.textContent='Pegando todas las estampas disponibles de forma segura…';
+  const {data,error}=await supabase.rpc('place_all_stickers');
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudieron pegar todas las estampas: ${error.message}`;button.disabled=false;return}
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado del pegado masivo.';button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:result.coins_balance};S.coins=result.coins_balance;
+  const inventoryStatus=await loadCloudInventory();
+  if(inventoryStatus.error){authMessage.dataset.error='true';authMessage.textContent=`Se pegaron ${result.placed_count} estampas, pero no se pudo actualizar la vista.`;return}
+  await Promise.all([loadCloudMissions(),loadCloudMilestones()]);
+  authMessage.textContent=result.placed_count
+    ?`Pegaste ${result.placed_count} estampas en el álbum. Saldo en Supabase: ${result.coins_balance} monedas.`
+    :'No había estampas disponibles para pegar.';
+}
+async function sellCloudSticker(pokemonId,isShiny,button=null){
+  if(button)button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Vendiendo estampa repetida de forma segura…';
+  const {data,error}=await supabase.rpc('sell_repeated',{p_pokemon_id:pokemonId,p_is_shiny:isShiny});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo vender la estampa: ${error.message}`;if(button)button.disabled=false;return}
+  const sale=Array.isArray(data)?data[0]:data;
+  if(!sale){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado de la venta.';if(button)button.disabled=false;return}
+  cloudPlayerState={...cloudPlayerState,coins:sale.coins_balance};
+  const inventoryStatus=await loadCloudInventory();
+  if(inventoryStatus.error){authMessage.dataset.error='true';authMessage.textContent=`Venta realizada, pero no se pudo actualizar el inventario: ${inventoryStatus.error.message}`;return}
+  await Promise.all([loadCloudMissions(),loadCloudMilestones()]);
+  authMessage.textContent=`Vendiste una estampa repetida por ${sale.sale_value} monedas. Saldo en Supabase: ${sale.coins_balance}.`;
+}
+async function removeCloudSticker(pokemonId,button=null){
+  if(button)button.disabled=true;authMessage.dataset.error='';authMessage.textContent='Devolviendo estampa al inventario…';
+  const {data,error}=await supabase.rpc('remove_sticker',{p_pokemon_id:pokemonId});
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo quitar la estampa: ${error.message}`;if(button)button.disabled=false;return}
+  const removal=Array.isArray(data)?data[0]:data;
+  if(!removal){authMessage.dataset.error='true';authMessage.textContent='Supabase no devolvió el resultado de la devolución.';if(button)button.disabled=false;return}
+  const inventoryStatus=await loadCloudInventory();
+  if(inventoryStatus.error){authMessage.dataset.error='true';authMessage.textContent=`Estampa devuelta, pero no se pudo actualizar la vista: ${inventoryStatus.error.message}`;return}
+  await loadCloudMilestones();
+  authMessage.textContent=`Estampa #${String(pokemonId).padStart(3,'0')} devuelta al inventario${removal.returned_is_shiny?' como shiny':''}.`;
+}
+function socialErrorMessage(error){
+  const message=String(error?.message||'');
+  if(message.includes('username_taken'))return 'Ese nombre ya está en uso.';
+  if(message.includes('invalid_username'))return 'Usa entre 3 y 20 letras, números o guiones bajos.';
+  if(message.includes('reserved_username'))return 'Ese nombre está reservado.';
+  if(message.includes('username_not_found'))return 'No encontramos ese nombre de usuario.';
+  if(message.includes('cannot_add_self'))return 'No puedes enviarte una solicitud a ti mismo.';
+  if(message.includes('already_friends'))return 'Ya están en la lista de amigos.';
+  if(message.includes('friend_request_already_pending'))return 'Ya hay una solicitud pendiente.';
+  if(message.includes('friend_request_rate_limited'))return 'Has enviado muchas solicitudes. Inténtalo más tarde.';
+  if(message.includes('trade_offer_rate_limited'))return 'Tienes demasiadas ofertas pendientes. Espera a que respondan antes de enviar más.';
+  if(message.includes('trade_already_pending'))return 'Ya tienes una oferta pendiente para este amigo.';
+  if(message.includes('offered_sticker_unavailable'))return 'Ya no tienes disponible la carta que ofreces.';
+  if(message.includes('requested_sticker_unavailable'))return 'Tu amigo ya no tiene disponible la carta solicitada.';
+  if(message.includes('not_friends'))return 'Ambos entrenadores deben ser amigos para intercambiar.';
+  if(message.includes('trade_not_pending'))return 'Esta oferta ya no está pendiente.';
+  if(message.includes('PGRST202')||message.includes('does not exist')||message.includes('Could not find'))return 'La función social aún no está instalada. Aplica la migración de amigos e intercambios.';
+  return 'No se pudo completar la acción. Inténtalo de nuevo.';
+}
+function setSocialAvailability(enabled){
+  $('#friendUsernameInput').disabled=!enabled;
+  $('#friendRequestForm button[type="submit"]').disabled=!enabled;
+  $('#tradeFriendSelect').disabled=!enabled;
+  if(!enabled)resetTradeChoices();
+}
+function updateUsernameButton(){
+  const input=$('#usernameInput'),button=$('#saveUsernameButton');
+  const username=input.value.trim().toLowerCase(),valid=/^[a-z0-9_]{3,20}$/.test(username);
+  const unchanged=!!currentUsername&&username===currentUsername;
+  const price=Number(usernameChangeCost);
+  const priceReady=Number.isInteger(price)&&price>0;
+  button.disabled=!valid||unchanged||!!currentUsername&&!priceReady;
+  button.textContent=!currentUsername?'Guardar gratis':unchanged?'Nombre actual':priceReady?`Cambiar · ${price} ◉`:'Cambio no disponible';
+}
+async function loadSocialProfile(){
+  const status=$('#usernameStatus'),input=$('#usernameInput');
+  status.textContent='Cargando perfil…';status.dataset.error='';
+  const {data,error}=await supabase.rpc('get_trainer_profile');
+  if(error){
+    currentUsername='';input.value='';status.dataset.error='true';
+    status.textContent=socialErrorMessage(error);
+    setSocialAvailability(false);
+    $('#socialSetupNotice').hidden=false;
+    $('#socialSetupNotice').textContent='El sistema de amigos aún no está disponible. Aplica la migración de amigos e intercambios.';
+    $('#friendRequestStatus').textContent='';$('#friendRequestStatus').dataset.error='';
+    return {error};
+  }
+  currentUsername=typeof data==='string'?data:'';
+  $('#authIdentity').textContent=currentUsername?`@${currentUsername}`:'';
+  input.value=currentUsername;status.dataset.error='';
+  usernameChangeCost=null;
+  const {data:changeCost,error:changeCostError}=await supabase.rpc('get_trainer_username_change_cost');
+  if(!changeCostError&&Number.isInteger(Number(changeCost))&&Number(changeCost)>0)usernameChangeCost=Number(changeCost);
+  updateUsernameButton();
+  setSocialAvailability(!!currentUsername);
+  status.textContent=currentUsername
+    ?usernameChangeCost===null?'Cambio de nombre pendiente de activar en el servidor.':`Los cambios cuestan ${usernameChangeCost} monedas.`
+    :'Necesitas un nombre de usuario para añadir amigos.';
+  $('#socialSetupNotice').hidden=!!currentUsername;
+  if(!currentUsername)$('#socialSetupNotice').textContent='Define tu nombre de usuario en Cuenta para empezar a conectar con otros entrenadores.';
+  await loadSocialDashboard();
+  return {error:null};
+}
+function socialButton(label,className,handler){
+  const button=document.createElement('button');button.type='button';button.className=className;button.textContent=label;button.onclick=handler;return button;
+}
+async function loadSocialDashboard(refreshTradeChoices=true){
+  if(!cloudMode||!currentUserId||socialDashboardLoading)return;
+  if(!currentUsername){setSocialAvailability(false);return}
+  socialDashboardLoading=true;
+  const dashboardStatus=$('#socialDashboardStatus');
+  let friendsResult,requestsResult,tradesResult;
+  try{
+    [friendsResult,requestsResult,tradesResult]=await Promise.all([
+      supabase.rpc('list_friends'),supabase.rpc('list_friend_requests'),supabase.rpc('list_trade_offers')
+    ]);
+  }catch(error){
+    socialDashboardLoading=false;dashboardStatus.dataset.error='true';dashboardStatus.textContent=socialErrorMessage(error);return {error};
+  }
+  const failures=[friendsResult.error,requestsResult.error,tradesResult.error].filter(Boolean);
+  dashboardStatus.dataset.error=failures.length?'true':'';
+  dashboardStatus.textContent=failures.length?socialErrorMessage(failures[0]):'';
+  const friends=friendsResult.data||[],requests=requestsResult.data||[],trades=(tradesResult.data||[]).filter(trade=>trade.trade_status==='pending');
+  $('#friendN').textContent=String(friends.length);
+  $('#incomingFriendEmpty').hidden=requests.length>0;
+  $('#friendsEmpty').hidden=friends.length>0;
+  $('#tradesEmpty').hidden=trades.length>0;
+  const requestList=$('#incomingFriendList');requestList.replaceChildren();
+  requests.forEach(request=>{
+    const item=document.createElement('li'),name=document.createElement('span'),actions=document.createElement('div');
+    item.className='social-row';name.className='social-name';name.textContent=`@${request.username}`;actions.className='social-actions';
+    actions.append(
+      socialButton('Aceptar','social-action primary',()=>respondToFriendRequest(request.friend_id,true)),
+      socialButton('Rechazar','social-action',()=>respondToFriendRequest(request.friend_id,false))
+    );item.append(name,actions);requestList.append(item);
+  });
+  const friendList=$('#friendList');friendList.replaceChildren();
+  const friendSelect=$('#tradeFriendSelect'),previousFriend=friendSelect.value;
+  friendSelect.replaceChildren(new Option('Selecciona un amigo',''));
+  friends.forEach(friend=>{
+    const item=document.createElement('li'),name=document.createElement('span'),actions=document.createElement('div'),option=new Option(`@${friend.username}`,friend.friend_id);
+    item.className='social-row';name.className='social-name';name.textContent=`@${friend.username}`;actions.className='social-actions';
+    actions.append(
+      socialButton('Intercambiar','social-action primary',()=>{friendSelect.value=friend.friend_id;loadTradeChoices(friend.friend_id);$('#tradeOfferTitle').scrollIntoView({behavior:'smooth',block:'start'})}),
+      socialButton('Quitar amigo','social-action danger',()=>removeFriend(friend.friend_id,friend.username))
+    );item.append(name,actions);friendList.append(item);friendSelect.append(option);
+  });
+  friendSelect.disabled=!currentUsername||!friends.length;
+  if(friends.some(friend=>friend.friend_id===previousFriend))friendSelect.value=previousFriend;
+  if(friendSelect.value){if(refreshTradeChoices)await loadTradeChoices(friendSelect.value)}
+  else resetTradeChoices();
+
+  const tradeList=$('#tradeList');tradeList.replaceChildren();
+  trades.forEach(trade=>{
+    const item=document.createElement('li'),summary=document.createElement('div'),description=document.createElement('p'),status=document.createElement('span'),actions=document.createElement('div');
+    item.className='social-row trade-row';summary.className='trade-summary';description.textContent=`@${trade.other_username}`;
+    status.className=`trade-status ${trade.trade_status}`;
+    status.textContent={pending:'Pendiente',completed:'Completado',declined:'Rechazado',cancelled:'Cancelado'}[trade.trade_status]||trade.trade_status;
+    const cards=document.createElement('div');cards.className='trade-stickers';
+    cards.append(createTradeSticker('Ofrecida',trade.offered_pokemon_id,trade.offered_is_shiny,trade.offered_source));
+    cards.append(createTradeSticker('Solicitada',trade.requested_pokemon_id,trade.requested_is_shiny,trade.requested_source));
+    summary.append(description,cards);actions.className='social-actions';
+    if(trade.trade_status==='pending'&&trade.recipient_id===currentUserId){
+      actions.append(socialButton('Aceptar intercambio','social-action primary',()=>acceptTrade(trade.trade_id)),socialButton('Rechazar','social-action',()=>closeTrade(trade.trade_id)));
+    }else if(trade.trade_status==='pending'&&trade.sender_id===currentUserId){
+      actions.append(socialButton('Cancelar oferta','social-action',()=>closeTrade(trade.trade_id)));
+    }
+    item.append(summary,status,actions);tradeList.append(item);
+  });
+  socialDashboardLoading=false;
+  return {error:null};
+}
+function createTradeSticker(label,pokemonId,isShiny,source){
+  const card=document.createElement('div'),image=document.createElement('img'),details=document.createElement('span'),name=document.createElement('strong'),origin=document.createElement('small');
+  card.className='trade-sticker-card';image.src=isShiny?SHINY_ART(pokemonId):ART(pokemonId);image.alt='';image.loading='lazy';
+  details.className='trade-sticker-details';name.textContent=`#${String(pokemonId).padStart(3,'0')}${isShiny?' · shiny':''}`;
+  origin.textContent=`${label} · ${source==='legacy'?'importada':'de sobres'}`;
+  details.append(origin,name);card.append(image,details);
+  info(pokemonId).then(pokemon=>{
+    image.src=imageFor(pokemon,isShiny);
+    name.textContent=`${pokemon.name}${isShiny?' · shiny':''}`;
+  }).catch(()=>{});
+  return card;
+}
+function resetTradeChoices(){
+  $('#tradeOfferedCard').replaceChildren(new Option('Elige primero un amigo',''));
+  $('#tradeRequestedCard').replaceChildren(new Option('Elige primero un amigo',''));
+  $('#tradeOfferedCard').disabled=true;$('#tradeRequestedCard').disabled=true;$('#sendTradeButton').disabled=true;
+}
+function populateTradeChoices(selector,items,placeholder){
+  const select=$(selector);select.replaceChildren(new Option(placeholder,''));
+  items.forEach(item=>{
+    const option=new Option(`#${String(item.pokemon_id).padStart(3,'0')}${item.is_shiny?' · shiny':''} · ${item.source==='legacy'?'importada':'de sobres'} · ×${item.quantity}`,`${item.pokemon_id}:${item.is_shiny}:${item.source}`);
+    select.append(option);
+    info(item.pokemon_id).then(p=>{option.textContent=`${p.name}${item.is_shiny?' shiny':''} · ${item.source==='legacy'?'importada':'de sobres'} · ×${item.quantity}`}).catch(()=>{});
+  });
+  select.disabled=!items.length;
+}
+async function loadTradeChoices(friendId){
+  const [ownResult,friendResult]=await Promise.all([
+    supabase.rpc('get_trade_inventory',{p_user_id:currentUserId}),
+    supabase.rpc('get_trade_inventory',{p_user_id:friendId})
+  ]);
+  if(ownResult.error||friendResult.error){
+    $('#tradeStatus').dataset.error='true';$('#tradeStatus').textContent=socialErrorMessage(ownResult.error||friendResult.error);resetTradeChoices();return;
+  }
+  populateTradeChoices('#tradeOfferedCard',ownResult.data||[],'Selecciona tu carta');
+  populateTradeChoices('#tradeRequestedCard',friendResult.data||[],'Selecciona la carta que quieres');
+  $('#sendTradeButton').disabled=!ownResult.data?.length||!friendResult.data?.length||!currentUsername;
+  if(!ownResult.data?.length||!friendResult.data?.length){
+    $('#tradeStatus').dataset.error='';
+    $('#tradeStatus').textContent=!ownResult.data?.length?'No tienes cartas sueltas para ofrecer.':'Tu amigo no tiene cartas sueltas disponibles.';
+  }else $('#tradeStatus').textContent='';
+}
+async function respondToFriendRequest(friendId,accept){
+  const {error}=await supabase.rpc('respond_friend_request',{p_friend_id:friendId,p_accept:accept});
+  if(error){$('#friendRequestStatus').dataset.error='true';$('#friendRequestStatus').textContent=socialErrorMessage(error);return}
+  $('#friendRequestStatus').dataset.error='';$('#friendRequestStatus').textContent=accept?'Solicitud aceptada.':'Solicitud rechazada.';
+  await loadSocialDashboard();
+}
+async function removeFriend(friendId,username){
+  if(!confirm(`¿Quitar a @${username} de tu lista de amigos?`))return;
+  const {error}=await supabase.rpc('remove_friend',{p_friend_id:friendId});
+  if(error){$('#friendRequestStatus').dataset.error='true';$('#friendRequestStatus').textContent=socialErrorMessage(error);return}
+  $('#friendRequestStatus').dataset.error='';$('#friendRequestStatus').textContent=`@${username} ya no está en tu lista.`;
+  await loadSocialDashboard();
+}
+async function submitTradeOffer(event){
+  event.preventDefault();
+  const [offeredId,offeredShiny,offeredSource]=$('#tradeOfferedCard').value.split(':');
+  const [requestedId,requestedShiny,requestedSource]=$('#tradeRequestedCard').value.split(':');
+  const friendId=$('#tradeFriendSelect').value,button=$('#sendTradeButton');
+  if(!friendId||!offeredId||!requestedId)return;
+  if(!confirm('¿Enviar esta oferta de intercambio? La otra persona deberá aceptarla.'))return;
+  button.disabled=true;$('#tradeStatus').dataset.error='';$('#tradeStatus').textContent='Enviando oferta…';
+  const {error}=await supabase.rpc('create_trade_offer',{
+    p_recipient_id:friendId,p_offered_pokemon_id:Number(offeredId),p_offered_is_shiny:offeredShiny==='true',p_offered_source:offeredSource,
+    p_requested_pokemon_id:Number(requestedId),p_requested_is_shiny:requestedShiny==='true',p_requested_source:requestedSource
+  });
+  button.disabled=false;
+  if(error){$('#tradeStatus').dataset.error='true';$('#tradeStatus').textContent=socialErrorMessage(error);return}
+  $('#tradeStatus').dataset.error='';$('#tradeStatus').textContent='Oferta enviada. La carta se intercambia cuando tu amigo la acepta.';
+  $('#tradeOfferForm').reset();await loadSocialDashboard();
+}
+async function acceptTrade(tradeId){
+  const {error}=await supabase.rpc('accept_trade_offer',{p_trade_id:tradeId});
+  if(error){$('#tradeStatus').dataset.error='true';$('#tradeStatus').textContent=socialErrorMessage(error);return}
+  $('#tradeStatus').dataset.error='';$('#tradeStatus').textContent='Intercambio completado.';
+  const inventoryStatus=await loadCloudInventory();
+  if(inventoryStatus.error){$('#tradeStatus').dataset.error='true';$('#tradeStatus').textContent='Intercambio completado, pero el inventario no pudo actualizarse. Recarga la vista.';return}
+  await loadSocialDashboard();
+}
+async function closeTrade(tradeId){
+  const {error}=await supabase.rpc('close_trade_offer',{p_trade_id:tradeId});
+  if(error){$('#tradeStatus').dataset.error='true';$('#tradeStatus').textContent=socialErrorMessage(error);return}
+  $('#tradeStatus').dataset.error='';$('#tradeStatus').textContent='Oferta cerrada.';await loadSocialDashboard();
+}
+function refreshVisibleSocialDashboard(){
+  if(document.visibilityState==='visible'&&cloudMode&&!$('#friends').hidden&&!socialDashboardLoading){
+    loadSocialDashboard(false);
+  }
+}
+window.setInterval(refreshVisibleSocialDashboard,20000);
+window.addEventListener('focus',refreshVisibleSocialDashboard);
+document.addEventListener('visibilitychange',refreshVisibleSocialDashboard);
+function showAuthState(session){
+  if(demoMode&&session)return;
+  if(!session){demoMode=false;currentUserId=null;currentUsername=''}
+  else currentUserId=session.user.id;
+  const signedIn=!!session;
+  authForm.hidden=signedIn;
+  if(signedIn){
+    setCloudReadOnlyView(false);isSuperAdmin=false;updateTestControls();
+    const check=++playerStateCheck;
+    $('#authIdentity').textContent='';
+    $('#accountStatus').textContent='';
+    authMessage.textContent='Verificando acceso al estado del jugador…';
+    window.setTimeout(async()=>{
+      const {data,error}=await supabase.from('player_state').select('coins,starter_packs,daily_streak,last_daily').eq('user_id',session.user.id).maybeSingle();
+      if(check!==playerStateCheck)return;
+      if(error){authMessage.dataset.error='true';authMessage.textContent=`La sesión funciona, pero falló la lectura protegida: ${error.message}`;return}
+      if(!data){authMessage.dataset.error='true';authMessage.textContent='No se encontró el estado inicial. Hay que revisar el trigger de registro.';return}
+      cloudPlayerState=data;updateOpenPackLabel();updateDailyBonusButton();
+      const {data:adminStatus,error:adminError}=await supabase.rpc('is_super_admin');
+      if(check!==playerStateCheck)return;
+      isSuperAdmin=!adminError&&adminStatus===true;updateTestControls();
+      const inventoryStatus=await loadCloudInventory();
+      if(check!==playerStateCheck)return;
+      if(inventoryStatus.error){authMessage.dataset.error='true';authMessage.textContent=`La sesión funciona, pero falló la lectura del inventario: ${inventoryStatus.error.message}`;return}
+      const missionStatus=await loadCloudMissions();
+      if(check!==playerStateCheck)return;
+      if(missionStatus.error){authMessage.dataset.error='true';authMessage.textContent=`No se pudieron cargar las misiones: ${missionStatus.error.message}`;return}
+      const [gamesStatus,milestonesStatus]=await Promise.all([loadCloudGames(),loadCloudMilestones()]);
+      if(check!==playerStateCheck)return;
+      setCloudReadOnlyView(true);tick();updateProgress();renderAlbum();
+      await loadSocialProfile();
+      if(check!==playerStateCheck)return;
+      authMessage.dataset.error='';
+      const adminStatusText=adminError?'No se pudo verificar el rol; Pruebas permanece oculta.':isSuperAdmin?'Superadministrador confirmado.':'Pruebas permanece oculta para esta cuenta.';
+      const missionStatusText=missionStatus.error?'No se pudieron cargar las misiones.':`Misiones cargadas: ${document.querySelectorAll('#cloudMissionResults .cloud-mission').length}.`;
+      const extraStatus=[gamesStatus.error?'Minijuegos pendientes de migración.':'Minijuegos cargados.',milestonesStatus.error?'Hitos pendientes de migración.':'Hitos cargados.'].join(' ');
+      authMessage.textContent=`Acceso propio confirmado: ${data.coins} monedas y ${data.starter_packs} sobres. Inventario cargado. ${missionStatusText} ${extraStatus} ${adminStatusText}`;
+    },0);
+  }else{
+    $('#accountMenu').open=false;$('#accountStatus').textContent='';
+    playerStateCheck++;setCloudReadOnlyView(false);isSuperAdmin=false;updateTestControls();cloudPlayerState=null;updateOpenPackLabel();$('#packRpcResults').replaceChildren();$('#cloudAlbumResults').replaceChildren();$('#cloudMissionResults').replaceChildren();$('#cloudGamesResults').replaceChildren();$('#cloudGamePlay').replaceChildren();$('#cloudGamePlay').hidden=true;$('#cloudMilestoneResults').replaceChildren();$('#adminTestResults').replaceChildren();
+    if(!authMessage.dataset.error)authMessage.textContent='Inicia sesión o crea una cuenta para continuar.';
+  }
+}
+authForm.addEventListener('submit',async event=>{
+  event.preventDefault(); authMessage.dataset.error=''; authMessage.textContent='Iniciando sesión…';
+  const submitButtons=authForm.querySelectorAll('button'); submitButtons.forEach(button=>button.disabled=true);
+  const {data,error}=await supabase.auth.signInWithPassword({email:$('#authEmail').value.trim(),password:$('#authPassword').value});
+  submitButtons.forEach(button=>button.disabled=false);
+  if(error){authMessage.dataset.error='true';authMessage.textContent=error.message;return}
+  showAuthState(data.session);
+});
+$('#signUpButton').onclick=async()=>{
+  authMessage.dataset.error='';authMessage.textContent='Creando cuenta…';$('#signUpButton').disabled=true;
+  const {data,error}=await supabase.auth.signUp({
+    email:$('#authEmail').value.trim(),password:$('#authPassword').value,
+    options:{emailRedirectTo:new URL('./',window.location.href).href}
+  });
+  $('#signUpButton').disabled=false;
+  if(error){authMessage.dataset.error='true';authMessage.textContent=error.message;return}
+  if(data.session)showAuthState(data.session);
+  else authMessage.textContent='Cuenta creada. Revisa tu correo para confirmar la dirección.';
+};
+$('#signOutButton').onclick=async()=>{
+  const button=$('#signOutButton'),status=$('#accountStatus');
+  button.disabled=true;status.dataset.error='';status.textContent='Cerrando sesión…';
+  authMessage.dataset.error='';authMessage.textContent='Cerrando sesión…';
+  const {error}=await supabase.auth.signOut();button.disabled=false;
+  if(error){
+    status.dataset.error='true';status.textContent=`No se pudo cerrar sesión: ${error.message}`;
+    authMessage.dataset.error='true';authMessage.textContent=error.message;return;
+  }
+  status.textContent='';$('#accountMenu').open=false;
+  authMessage.textContent='Sesión cerrada.';
+};
+$('#saveUsernameButton').onclick=async()=>{
+  const button=$('#saveUsernameButton'),input=$('#usernameInput'),status=$('#usernameStatus'),username=input.value.trim().toLowerCase();
+  if(!/^[a-z0-9_]{3,20}$/.test(username)){status.dataset.error='true';status.textContent='Usa entre 3 y 20 letras, números o guiones bajos.';return}
+  const previousUsername=currentUsername;
+  if(previousUsername&&username!==previousUsername&&usernameChangeCost===null){
+    status.dataset.error='true';status.textContent='Aplica la migración 005 antes de cambiar un nombre guardado.';return;
+  }
+  if(previousUsername&&username!==previousUsername&&!confirm(`Cambiar @${previousUsername} por @${username} cuesta ${usernameChangeCost} monedas. ¿Continuar?`))return;
+  button.disabled=true;status.dataset.error='';status.textContent='Guardando nombre…';
+  const {data,error}=await supabase.rpc('set_trainer_username',{p_username:username});button.disabled=false;
+  if(error){
+    status.dataset.error='true';
+    status.textContent=error.message?.includes('insufficient_username_change_coins')?`Necesitas ${usernameChangeCost} monedas para cambiar tu nombre.`:socialErrorMessage(error);
+    updateUsernameButton();return;
+  }
+  const result=Array.isArray(data)?data[0]:data;
+  currentUsername=typeof result==='string'?result:result?.username||username;input.value=currentUsername;status.dataset.error='';
+  $('#authIdentity').textContent=`@${currentUsername}`;
+  if(result&&typeof result==='object'&&Number.isFinite(Number(result.coins_balance))){
+    cloudPlayerState={...cloudPlayerState,coins:Number(result.coins_balance)};S.coins=Number(result.coins_balance);renderCoins();tick();
+  }
+  const changeCost=Number(result?.change_cost)||0;
+  status.textContent=changeCost?`Nombre cambiado a @${currentUsername} · −${changeCost} monedas · saldo ${result.coins_balance}.`:`Tu nombre: @${currentUsername} · guardado gratis.`;
+  setSocialAvailability(true);updateUsernameButton();
+  $('#socialSetupNotice').hidden=true;await loadSocialDashboard();
+};
+$('#usernameInput').addEventListener('input',updateUsernameButton);
+$('#friendRequestForm').addEventListener('submit',async event=>{
+  event.preventDefault();const status=$('#friendRequestStatus'),input=$('#friendUsernameInput'),button=$('#friendRequestForm button[type="submit"]');
+  if(!currentUsername){status.dataset.error='true';status.textContent='Primero define tu nombre de usuario en Cuenta.';return}
+  const username=input.value.trim().toLowerCase();button.disabled=true;status.dataset.error='';status.textContent='Enviando solicitud…';
+  const {data,error}=await supabase.rpc('request_friend',{p_username:username});button.disabled=false;
+  if(error){status.dataset.error='true';status.textContent=socialErrorMessage(error);return}
+  const result=Array.isArray(data)?data[0]:data;
+  status.dataset.error='';status.textContent=result?.request_status==='accepted'?`Ya son amigos con @${result.friend_username}.`:`Solicitud enviada a @${result?.friend_username||username}.`;
+  input.value='';await loadSocialDashboard();
+});
+$('#tradeFriendSelect').onchange=()=>{
+  const friendId=$('#tradeFriendSelect').value;
+  if(friendId)loadTradeChoices(friendId);else resetTradeChoices();
+};
+$('#tradeOfferForm').addEventListener('submit',submitTradeOffer);
+$('#refreshSocialButton').onclick=()=>loadSocialProfile();
+$('#claimDailyRpcButton').onclick=async()=>{
+  const button=$('#claimDailyRpcButton');button.disabled=true;authMessage.dataset.error='';
+  authMessage.textContent='Solicitando el bono diario al servidor…';
+  const {data,error}=await supabase.rpc('claim_daily_bonus');
+  if(error){
+    authMessage.dataset.error='true';authMessage.textContent=`No se pudo reclamar el bono: ${error.message}`;
+    button.disabled=false;return;
+  }
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result){authMessage.dataset.error='true';authMessage.textContent='El servidor respondió sin datos del bono.';button.disabled=false;return}
+  button.textContent='Bono diario reclamado';
+  cloudPlayerState={...cloudPlayerState,coins:result.coins,daily_streak:result.daily_streak,last_daily:result.last_daily};updateOpenPackLabel();updateDailyBonusButton();
+  authMessage.textContent=`RPC correcto: +${result.reward} monedas. Saldo en Supabase: ${result.coins}. Racha: ${result.daily_streak}.`;
+};
+$('#adminTestPackButton').onclick=async()=>{
+  const button=$('#adminTestPackButton'),results=$('#adminTestResults');
+  button.disabled=true;results.replaceChildren();authMessage.dataset.error='';
+  authMessage.textContent='Solicitando una vista de prueba…';
+  const {data,error}=await supabase.rpc('admin_test_pack');
+  button.disabled=false;
+  if(error){authMessage.dataset.error='true';authMessage.textContent=`No se pudo generar la prueba: ${error.message}`;return}
+  if(!Array.isArray(data)||data.length!==5){
+    authMessage.dataset.error='true';authMessage.textContent=`Respuesta inesperada: se recibieron ${data?.length||0} cartas.`;return;
+  }
+  const heading=document.createElement('h2'),list=document.createElement('ul');
+  heading.textContent='Sobre de prueba · no guardado';list.className='rpc-pack-list';
+  data.forEach(card=>{
+    const item=document.createElement('li'),image=document.createElement('img'),name=document.createElement('span');
+    image.src=card.is_shiny?SHINY_ART(card.pokemon_id):ART(card.pokemon_id);image.alt='';image.loading='lazy';
+    name.textContent=`#${String(card.pokemon_id).padStart(3,'0')}${card.is_shiny?' · SHINY':''}`;
+    item.append(image,name);list.append(item);
+    info(card.pokemon_id).then(p=>{name.textContent=`#${String(card.pokemon_id).padStart(3,'0')} ${p.name}${card.is_shiny?' · SHINY':''}`}).catch(()=>{});
+  });
+  results.replaceChildren(heading,list);
+  authMessage.textContent='Vista generada por Supabase. No se modificaron monedas, sobres ni inventario.';
+};
+$('#openPackRpcButton').onclick=async()=>{
+  const button=$('#openPackRpcButton');button.disabled=true;$('#packBtn').disabled=true;
+  authMessage.dataset.error='';authMessage.textContent='Abriendo sobre de forma segura…';
+  $('#packRpcResults').replaceChildren();
+  const {data,error}=await supabase.rpc('open_pack');
+  if(error){
+    authMessage.dataset.error='true';authMessage.textContent=`No se pudo abrir el sobre: ${error.message}`;
+    updateOpenPackLabel();tick();return;
+  }
+  if(!Array.isArray(data)||data.length!==5){
+    authMessage.dataset.error='true';authMessage.textContent=`Respuesta inesperada de Supabase: se recibieron ${data?.length||0} cartas.`;
+    updateOpenPackLabel();tick();return;
+  }
+  const first=data[0];cloudPlayerState={...cloudPlayerState,coins:first.coins_balance,starter_packs:first.starter_packs_remaining};
+  const inventoryStatus=await loadCloudInventory();updateOpenPackLabel();
+  revealCloudPack(data);
+  if(inventoryStatus.error){authMessage.dataset.error='true';authMessage.textContent=`Sobre guardado, pero no se pudo leer el inventario: ${inventoryStatus.error.message}`;return}
+  await Promise.all([loadCloudMissions(),loadCloudMilestones()]);
+  authMessage.textContent=`Sobre registrado: 5 estampas en tu inventario. Saldo: ${first.coins_balance} monedas; sobres gratis: ${first.starter_packs_remaining}.`;
+};
+supabase.auth.onAuthStateChange((_event,session)=>showAuthState(session));
+supabase.auth.getSession().then(({data,error})=>{
+  if(error){authMessage.dataset.error='true';authMessage.textContent='No se pudo consultar la sesión. Inténtalo de nuevo.';return}
+  showAuthState(data.session);
+}).catch(()=>{authMessage.dataset.error='true';authMessage.textContent='No se pudo conectar con Supabase.'});
+const KEY='pokealbum-v2', DEMO_KEY='pokealbum-admin-demo-v1';
 let S={packs:3,last:Date.now(),starterPacks:5,coins:500,owned:{},stickers:{},shinyOwned:{},shinyStickers:{},profile:'normal'};
 try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)))}catch{}
 S.owned ||= {}; S.stickers ||= {}; S.shinyOwned ||= {}; S.shinyStickers ||= {};
@@ -17,7 +760,18 @@ Object.keys(S.owned).forEach(id=>{
   const extra=Math.max(0,Number(S.owned[id])-1);
   if(extra){S.stickers[id]=(S.stickers[id]||0)+extra;S.owned[id]=1}
 });
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch{}};
+const save=()=>{try{localStorage.setItem(demoMode?DEMO_KEY:KEY,JSON.stringify(S))}catch{}};
+function loadDemoState(){
+  const state={packs:3,last:Date.now(),starterPacks:5,coins:500,owned:{},stickers:{},shinyOwned:{},shinyStickers:{},profile:'normal'};
+  try{
+    const stored=JSON.parse(localStorage.getItem(DEMO_KEY));
+    if(stored&&typeof stored==='object'&&!Array.isArray(stored))Object.assign(state,stored);
+  }catch{}
+  state.owned||={};state.stickers||={};state.shinyOwned||={};state.shinyStickers||={};
+  state.coins??=500;state.starterPacks??=5;state.daily||={last:'',streak:0};state.missions||={date:'',list:[]};
+  state.games||={date:'',played:{}};state.claimed||={};state.lifePacks??=0;state.profile='normal';
+  return state;
+}
 if(S.starterPacks!==starterPacksBeforeCap)save();
 const say=t=>$('#live').textContent=t;
 function inventoryGroups(){
@@ -47,7 +801,7 @@ function updateProgress(){
   const own=Object.keys(S.owned).length;
   const groups=inventoryGroups(), loose=groups.pending.reduce((n,item)=>n+item.count,0);
   const percentage=Math.min(100,own/TOTAL*100), fill=$('#fill'), bar=$('.bar');
-  fill.style.width=percentage+'%'; fill.style.setProperty('--progress-hue',String(percentage*1.2));
+  fill.style.width=percentage+'%'; fill.style.setProperty('--progress-hue',String(8+percentage*.3));
   bar.setAttribute('aria-valuenow',String(own));
   bar.setAttribute('aria-valuetext',`${own} de ${TOTAL} estampas pegadas, ${Math.floor(percentage)}%`);
   $('#progText').textContent=`${own} / ${TOTAL}`;
@@ -82,7 +836,7 @@ async function speciesDescription(id){
 }
 const rarity=p=>LEG.includes(p.id)?'legendary':p.bst>=500?'rare':p.bst>=400?'uncommon':'common';
 const RL={common:'Común',uncommon:'Poco común',rare:'Rara',legendary:'Legendaria'};
-const shinyChance=(profile=S.profile)=>PROFILES[profile].baseShinyChance;
+const shinyChance=(profile=S.profile)=>demoMode?PROFILES.test.baseShinyChance:PROFILES[profile].baseShinyChance;
 const TYPE_LABELS={normal:'Normal',fire:'Fuego',water:'Agua',electric:'Eléctrico',grass:'Planta',ice:'Hielo',fighting:'Lucha',poison:'Veneno',ground:'Tierra',flying:'Volador',psychic:'Psíquico',bug:'Bicho',rock:'Roca',ghost:'Fantasma',dragon:'Dragón',dark:'Siniestro',steel:'Acero',fairy:'Hada'};
 const TYPE_THEMES={
   normal:['#8c8864','#eeecd9'],fire:['#d94830','#fbe1c5'],water:['#2075d8','#dceeff'],electric:['#a87300','#fff1a8'],
@@ -100,11 +854,11 @@ function applyTypeTheme(element,type){
 // --- Sobres ---
 function tick(){
   document.querySelectorAll('.profile-switch button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.profile===S.profile)));
-  const activeProfile=PROFILES[S.profile];
+  const activeProfile=demoMode?PROFILES.test:PROFILES[S.profile];
   if(activeProfile.unlimited){
     $('#packN').textContent='∞'; $('#packBtn').disabled=false;
     $('#packPrice').textContent='5 cartas · gratis';
-    $('#timer').textContent='Pruebas: sobres ilimitados · 50% shiny por carta.';
+    $('#timer').textContent=demoMode?'Demo admin: sobres ilimitados · progreso local aislado.':'Pruebas: sobres ilimitados · 50% shiny por carta.';
     renderCoins(); return;
   }
   const packs=S.starterPacks+Math.floor(S.coins/PACK_COST);
@@ -116,13 +870,41 @@ function tick(){
   renderCoins();
 }
 const draw=()=>Array.from({length:5},(_,i)=>Math.random()<(i===4?.15:.04)?LEG[rnd(5)]:1+rnd(TOTAL));
+function revealCloudPack(cards){
+  const box=$('#cards');box.replaceChildren();$('#close').hidden=false;$('#close').textContent='Voltear todas';$('#reveal').hidden=false;
+  cards.forEach(cardData=>{
+    const id=cardData.pokemon_id,shiny=cardData.is_shiny,card=document.createElement('button');
+    card.className='card';card.classList.toggle('shiny',shiny);
+    card.setAttribute('aria-label',`Carta ${shiny?'shiny ':''}número ${id}, guardada. Pulsa para voltear.`);
+    card.innerHTML=`<span class="in"><span class="back"></span><span class="front type-bg r-common"><img alt="" src="${shiny?SHINY_ART(id):ART(id)}"><b>#${String(id).padStart(3,'0')}</b><i>Estampa${shiny?' shiny':''}</i>${shiny?'<strong class="shine-mark">SHINY</strong>':''}</span></span>`;
+    applyTypeTheme(card.querySelector('.front'),'normal');
+    card.onclick=()=>{
+      if(!card.classList.contains('on')){
+        card.classList.add('on');card.setAttribute('aria-label',`Estampa ${shiny?'shiny ':''}#${id}, guardada`);
+        if(!cloudMode)trackEvent('flip',1);
+        updateRevealAction();return;
+      }
+      showDetail(id,shiny);
+    };
+    box.append(card);
+    info(id).then(p=>{
+      const front=card.querySelector('.front');
+      front.classList.remove('r-common','r-uncommon','r-rare','r-legendary');front.classList.add(`r-${rarity(p)}`);
+      front.querySelector('img').src=imageFor(p,shiny);front.querySelector('b').textContent=`#${id} ${p.name}`;
+      front.querySelector('i').textContent=`${RL[rarity(p)]} · ${p.types.join(', ')}`;
+      applyTypeTheme(front,p.types[0]);
+    }).catch(()=>{});
+  });
+  updateRevealAction();say('Las 5 estampas del sobre se guardaron en tu colección.');box.querySelector('.card')?.focus();
+}
 function updateRevealAction(){
   const cards=[...$('#cards').querySelectorAll('.card')];
   $('#close').textContent=cards.length&&cards.every(card=>card.classList.contains('on'))?'Continuar':'Voltear todas';
 }
 
 async function openPack(){
-  const activeProfile=PROFILES[S.profile];
+  if(cloudMode){$('#openPackRpcButton').click();return}
+  const activeProfile=demoMode?PROFILES.test:PROFILES[S.profile];
   const usesStarterPack=!activeProfile.unlimited&&S.starterPacks>0;
   if(!activeProfile.unlimited&&!usesStarterPack&&S.coins<PACK_COST)return;
   const ids=draw();
@@ -161,7 +943,7 @@ async function openPack(){
   });
   updateRevealAction();
   save(); updateProgress();
-  if(!activeProfile.unlimited){S.lifePacks++;trackEvent('pack',1);trackEvent('shiny',shinyCount);trackEvent('new',newCount);checkMilestones()}
+  if(!activeProfile.unlimited||demoMode){S.lifePacks++;trackEvent('pack',1);trackEvent('shiny',shinyCount);trackEvent('new',newCount);checkMilestones()}
   say('Las 5 estampas del sobre se guardaron en tu colección.');
   box.querySelector('.card').focus();
 }
@@ -172,13 +954,36 @@ $('#close').onclick=()=>{
 };
 $('#packBtn').onclick=openPack;
 document.querySelectorAll('.profile-switch button').forEach(b=>b.onclick=()=>{
+  if(cloudMode||demoMode||!isSuperAdmin)return;
   S.profile=b.dataset.profile;
   save(); tick(); if(S.profile==='normal')checkMilestones(); say(S.profile==='test'?'Perfil de pruebas activado.':'Perfil normal activado.');
 });
+$('#toggleDemoModeButton').onclick=async()=>{
+  if(!isSuperAdmin)return;
+  const button=$('#toggleDemoModeButton');button.disabled=true;
+  if(!demoMode){
+    demoMode=true;S=loadDemoState();save();setCloudReadOnlyView(false);
+    updateEconomy();renderAlbum();renderQuests();
+    document.querySelector('nav [data-tab="packs"]').click();
+    $('#accountMenu').open=false;button.disabled=false;return;
+  }
+  $('#adminModeStatus').textContent='Restaurando tu vista en línea…';
+  demoMode=false;setCloudReadOnlyView(true);
+  document.querySelector('nav [data-tab="packs"]').click();
+  const inventoryStatus=await loadCloudInventory();
+  if(inventoryStatus.error){
+    demoMode=true;setCloudReadOnlyView(false);updateEconomy();renderAlbum();renderQuests();
+    $('#adminModeStatus').textContent='No se pudo cargar la colección en línea. La demo sigue activa.';
+    button.disabled=false;return;
+  }
+  await Promise.all([loadCloudMissions(),loadCloudGames(),loadCloudMilestones()]);
+  updateTestControls();$('#accountMenu').open=false;button.disabled=false;
+};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#reveal').hidden&&!$('#close').hidden){$('#reveal').hidden=true;$('#packBtn').focus()}});
 
 // --- Álbum y reserva de estampas ---
 const PAGE_SIZE=18, SIDE_SIZE=9, PAGE_COUNT=Math.ceil(TOTAL/PAGE_SIZE), DETAIL_DELAY=300;
+let detailVariants=[],detailIndex=-1,detailRequest=0,detailLoading=false;
 const PAGE_THEMES=[
   {title:'Pueblo Paleta',accent:'#bd523c'},
   {title:'Bosque Verde',accent:'#63804b'},
@@ -336,6 +1141,7 @@ function renderAlbum(){
   updateProgress(); renderStock(); renderRepeated(); renderPage();
 }
 $('#clearCollection').onclick=()=>{
+  if(cloudMode)return;
   const placed=Object.keys(S.owned).length, loose=Object.values(S.stickers).reduce((a,n)=>a+n,0)+Object.values(S.shinyStickers).reduce((a,n)=>a+n,0);
   if(!placed&&!loose)return;
   if(!confirm(`Se borrarán ${placed} estampas pegadas y ${loose} en reserva. Esta acción no se puede deshacer. ¿Continuar?`))return;
@@ -343,6 +1149,7 @@ $('#clearCollection').onclick=()=>{
   save(); renderAlbum(); say('Colección vaciada.');
 };
 function placeSticker(id,shiny=false,replaceNormal=false){
+  if(cloudMode){placeCloudSticker(id,shiny);return}
   const inventory=shiny?S.shinyStickers:S.stickers;
   if(!inventory[id]||(S.owned[id]&&!replaceNormal))return;
   if(replaceNormal&&(!shiny||!S.owned[id]||S.shinyOwned[id]))return;
@@ -355,6 +1162,7 @@ function placeSticker(id,shiny=false,replaceNormal=false){
   document.querySelector(`[data-slot="${id}"]`)?.focus();
 }
 function placeAllStickers(){
+  if(cloudMode){placeAllCloudStickers();return}
   const {pending}=inventoryGroups(); let placed=0;
   pending.forEach(({id,shiny})=>{
     const inventory=shiny?S.shinyStickers:S.stickers;
@@ -370,6 +1178,7 @@ function placeAllStickers(){
 }
 $('#placeAll').onclick=placeAllStickers;
 function sellRepeated(id,shiny=false){
+  if(cloudMode){sellCloudSticker(id,shiny);return}
   if(S.profile==='test'){say('Las ventas no están disponibles en el perfil de pruebas.');return}
   const inventory=shiny?S.shinyStickers:S.stickers;
   const repeated=inventoryGroups().repeated.some(item=>item.id===id&&item.shiny===shiny&&item.count>0);
@@ -381,39 +1190,79 @@ function sellRepeated(id,shiny=false){
 }
 $('#prevPage').onclick=()=>{if(currentPage>0){currentPage--;renderPage()}};
 $('#nextPage').onclick=()=>{if(currentPage<PAGE_COUNT-1){currentPage++;renderPage()}};
+function getOwnedDetailVariants(){
+  const ids=new Set([...Object.keys(S.owned),...Object.keys(S.stickers),...Object.keys(S.shinyOwned),...Object.keys(S.shinyStickers)]);
+  const variants=[];
+  ids.forEach(key=>{
+    const id=Number(key);if(!Number.isInteger(id)||id<1||id>TOTAL)return;
+    if((!!S.owned[id]&&!S.shinyOwned[id])||Number(S.stickers[id])>0)variants.push({id,shiny:false});
+    if(!!S.shinyOwned[id]||Number(S.shinyStickers[id])>0)variants.push({id,shiny:true});
+  });
+  return variants.sort((a,b)=>a.id-b.id||Number(a.shiny)-Number(b.shiny));
+}
+function updateDetailControls(){
+  const previous=$('#detailPrev'),next=$('#detailNext'),position=$('#detailPosition');
+  if(!previous||!next||!position)return;
+  previous.disabled=detailLoading||detailIndex<=0;
+  next.disabled=detailLoading||detailIndex<0||detailIndex>=detailVariants.length-1;
+  position.textContent=detailVariants.length?`${detailIndex+1} de ${detailVariants.length}`:'0 de 0';
+}
+function navigateDetail(offset){
+  if(detailLoading)return;
+  const nextIndex=detailIndex+offset;
+  if(nextIndex<0||nextIndex>=detailVariants.length)return;
+  const next=detailVariants[nextIndex];showDetail(next.id,next.shiny);
+}
 async function showDetail(id,shiny=false){
-  try{const p=await info(id);
+  const request=++detailRequest;
+  detailVariants=getOwnedDetailVariants();
+  detailIndex=detailVariants.findIndex(card=>card.id===id&&card.shiny===shiny);
+  if(detailIndex<0){detailVariants.push({id,shiny});detailVariants.sort((a,b)=>a.id-b.id||Number(a.shiny)-Number(b.shiny));detailIndex=detailVariants.findIndex(card=>card.id===id&&card.shiny===shiny)}
+  detailLoading=true;
+  const previous=$('#detailPrev'),next=$('#detailNext');
+  if(previous)previous.disabled=true;if(next)next.disabled=true;
+  try{const p=await info(id);if(request!==detailRequest)return;
     const inventory=shiny?S.shinyStickers:S.stickers, isPlaced=!!S.owned[id]&&!!S.shinyOwned[id]===shiny;
     const replaceNormal=shiny&&!!S.owned[id]&&!S.shinyOwned[id]&&!!inventory[id];
     const status=isPlaced?'Pegada':replaceNormal?'Shiny repetida · puedes cambiarla':'En reserva';
     const description=await speciesDescription(id).catch(()=> 'La descripción no está disponible ahora.');
-    $('#detailBody').innerHTML=`<article class="detail-sticker${shiny?' is-shiny':''}"><div class="detail-topline"><span>POKÉÁLBUM · KANTO</span><span>#${String(id).padStart(3,'0')}</span></div><div class="detail-art type-bg${shiny?' shiny':''}"><img alt="${shiny?'Shiny ':''}${p.name}" src="${imageFor(p,shiny)}">${shiny?'<span class="shine-mark">SHINY</span>':''}</div><div class="detail-copy"><p class="detail-eyebrow">${RL[rarity(p)]}${shiny?' · VARIANTE SHINY':''}</p><h3>${p.name}</h3><div class="detail-types">${p.types.map(type=>`<span>${TYPE_LABELS[type]||type}</span>`).join('')}</div><p class="detail-description">${description}</p><p class="detail-inventory">${status} · ×${inventory[id]||(isPlaced?1:0)||1}</p></div></article>`;
+    if(request!==detailRequest)return;
+    $('#detailBody').innerHTML=`<article class="detail-sticker${shiny?' is-shiny':''}"><div class="detail-topline"><span>POKÉÁLBUM · KANTO</span><span>#${String(id).padStart(3,'0')}</span></div><div class="detail-art type-bg${shiny?' shiny':''}"><img alt="${shiny?'Shiny ':''}${p.name}" src="${imageFor(p,shiny)}">${shiny?'<span class="shine-mark">SHINY</span>':''}<button id="detailPrev" class="detail-nav detail-nav-prev" type="button" aria-label="Carta anterior" title="Carta anterior">←</button><span id="detailPosition" class="detail-position" aria-live="polite"></span><button id="detailNext" class="detail-nav detail-nav-next" type="button" aria-label="Siguiente carta" title="Siguiente carta">→</button></div><div class="detail-copy"><p class="detail-eyebrow">${RL[rarity(p)]}${shiny?' · VARIANTE SHINY':''}</p><h3 id="detailTitle">${p.name}</h3><div class="detail-types">${p.types.map(type=>`<span>${TYPE_LABELS[type]||type}</span>`).join('')}</div><p class="detail-description">${description}</p><p class="detail-inventory">${status} · ×${inventory[id]||(isPlaced?1:0)||1}</p></div></article>`;
+    $('#detailPrev').onclick=()=>navigateDetail(-1);$('#detailNext').onclick=()=>navigateDetail(1);
     applyTypeTheme($('#detailBody .detail-art'),p.types[0]);
     $('#detailBody .detail-art').classList.toggle('shiny',shiny);
+    const [typeColor,typePale]=TYPE_THEMES[p.types[0]]||TYPE_THEMES.normal;
+    $('#detailBody .detail-copy').style.setProperty('--type-color',typeColor);
+    $('#detailBody .detail-copy').style.setProperty('--type-pale',typePale);
     $('#placeSticker').dataset.id=id; $('#placeSticker').dataset.shiny=String(shiny); $('#placeSticker').textContent=replaceNormal?(S.profile==='normal'?`Cambiar por shiny · +${SHINY_UPGRADE_REWARD} monedas`:'Cambiar por shiny · Pruebas'):'Pegar en el álbum';
     $('#placeSticker').classList.toggle('replace-shiny',replaceNormal); $('#placeSticker').hidden=!inventory[id]||!!S.owned[id]&&!replaceNormal;
     $('#removeSticker').dataset.id=id; $('#removeSticker').dataset.shiny=String(shiny); $('#removeSticker').hidden=!isPlaced;
-    $('#detail').showModal();
-  }catch{say('No se pudo cargar el detalle. Revisa tu conexión.')}
+    detailLoading=false;updateDetailControls();
+    if(!$('#detail').open)$('#detail').showModal();
+  }catch{if(request===detailRequest){detailLoading=false;updateDetailControls();say('No se pudo cargar el detalle. Revisa tu conexión.')}}
 }
 $('#placeSticker').onclick=()=>{
   const id=Number($('#placeSticker').dataset.id), shiny=$('#placeSticker').dataset.shiny==='true';
+  if(cloudMode){$('#detail').close();placeCloudSticker(id,shiny);return}
   const replaceNormal=shiny&&!!S.owned[id]&&!S.shinyOwned[id];
   if(!(shiny?S.shinyStickers:S.stickers)[id]||(S.owned[id]&&!replaceNormal))return;
   $('#detail').close(); currentPage=Math.floor((id-1)/PAGE_SIZE); renderPage(); placeSticker(id,shiny,replaceNormal);
 };
 $('#removeSticker').onclick=()=>{
   const id=Number($('#removeSticker').dataset.id), shiny=$('#removeSticker').dataset.shiny==='true';
+  if(cloudMode){$('#detail').close();removeCloudSticker(id);return}
   if(!S.owned[id]||!!S.shinyOwned[id]!==shiny)return;
   const inventory=shiny?S.shinyStickers:S.stickers; inventory[id]=(inventory[id]||0)+1;
   delete S.owned[id]; delete S.shinyOwned[id];
   save(); $('#detail').close(); renderAlbum(); say(`Estampa ${shiny?'shiny ':''}${id} devuelta a tu reserva.`);
   document.querySelector(`[data-slot="${id}"]`)?.focus();
 };
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('nav button').forEach(x=>x===b?x.setAttribute('aria-current','page'):x.removeAttribute('aria-current'));
-  $('#packs').hidden=b.dataset.tab!=='packs'; $('#album').hidden=b.dataset.tab!=='album'; $('#quests').hidden=b.dataset.tab!=='quests';
-  if(b.dataset.tab==='album')renderAlbum(); if(b.dataset.tab==='quests')renderQuests();
+document.querySelectorAll('nav button[data-tab]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button[data-tab]').forEach(x=>x===b?x.setAttribute('aria-current','page'):x.removeAttribute('aria-current'));
+  $('#packs').hidden=b.dataset.tab!=='packs'; $('#album').hidden=b.dataset.tab!=='album'; $('#quests').hidden=b.dataset.tab!=='quests'; $('#friends').hidden=b.dataset.tab!=='friends';
+  if(b.dataset.tab==='album')renderAlbum();
+  if(b.dataset.tab==='quests'){if(cloudMode)Promise.all([loadCloudMissions(),loadCloudGames(),loadCloudMilestones()]);else renderQuests()}
+  if(b.dataset.tab==='friends'&&cloudMode)loadSocialDashboard();
 });
 
 const MISSION_POOL=[
@@ -449,24 +1298,25 @@ function anyPageComplete(){
 }
 function ensureMissions(){
   const today=localDate();
+  if(!S.missions||!Array.isArray(S.missions.list))S.missions={date:'',list:[]};
   if(S.missions.date===today&&S.missions.list.length>=6)return;
   if(S.missions.date===today){
     const available=MISSION_POOL.filter(candidate=>!S.missions.list.some(mission=>mission.type===candidate.type&&mission.goal===candidate.goal));
     while(S.missions.list.length<6&&available.length){const index=rnd(available.length);S.missions.list.push({...available.splice(index,1)[0],progress:0,claimed:false})}
-    save(); return;
+    save();return;
   }
-  const pool=[...MISSION_POOL], list=[];
+  const pool=[...MISSION_POOL],list=[];
   while(list.length<6){const index=rnd(pool.length);list.push({...pool.splice(index,1)[0],progress:0,claimed:false})}
-  S.missions={date:today,list}; save();
+  S.missions={date:today,list};save();
 }
 function ensureGames(){
   const today=localDate();
-  if(S.games.date!==today)S.games={date:today,played:{}};
+  if(!S.games||S.games.date!==today||!S.games.played)S.games={date:today,played:{}};
 }
 function missionLabel(type){return {pack:'Sobres abiertos',place:'Estampas pegadas',flip:'Cartas reveladas',shiny:'Estampas shiny',new:'Estampas nuevas',typeCorrect:'Tipos acertados',guessCorrect:'Pokémon adivinados',gameComplete:'Minijuegos completados'}[type]||type}
 function trackEvent(type,amount){
   if(S.profile==='test'||!amount)return;
-  ensureMissions(); let changed=false;
+  ensureMissions();let changed=false;
   S.missions.list.forEach(mission=>{if(mission.type===type&&!mission.claimed){mission.progress=Math.min(mission.goal,mission.progress+amount);changed=true}});
   if(changed){save();updateQuestBadge();if(!$('#quests').hidden)renderQuests()}
 }
@@ -478,10 +1328,6 @@ function checkMilestones(){
 function nextStreak(){return S.daily.last===previousDate(localDate())?S.daily.streak+1:1}
 function dailyReward(){return Math.min(DAILY_MAX,DAILY_BASE+(nextStreak()-1)*DAILY_STEP)}
 function dailyAvailable(){return S.daily.last!==localDate()}
-function claimDaily(){
-  if(!dailyAvailable())return;
-  S.daily={last:localDate(),streak:nextStreak()}; award(Math.min(DAILY_MAX,DAILY_BASE+(S.daily.streak-1)*DAILY_STEP),`Bono diario · racha ${S.daily.streak}`); renderQuests();
-}
 function claimMission(index){
   const mission=S.missions.list[index]; if(!mission||mission.claimed||mission.progress<mission.goal)return;
   mission.claimed=true; save(); award(mission.reward,'Misión completada.'); renderQuests();
@@ -587,6 +1433,14 @@ function updateQuestBadge(){
   $('#questN').textContent=ready+Object.keys(GAME_LABELS).filter(kind=>!S.games.played[kind]).length;
 }
 function updateEconomy(){renderCoins();tick();updateQuestBadge()}
+function claimDaily(){
+  if(cloudMode){$('#claimDailyRpcButton').click();return}
+  if(!dailyAvailable())return;
+  const streak=nextStreak();
+  S.daily={last:localDate(),streak};
+  award(dailyReward(),`Bono diario · racha ${streak}`);
+  renderQuests();
+}
 function renderQuests(){
   ensureMissions(); ensureGames();
   const dailyDone=!dailyAvailable();
@@ -610,5 +1464,3 @@ function renderQuests(){
   updateQuestBadge();
 }
 $('#dailyBtn').onclick=claimDaily;
-
-ensureMissions(); tick(); updateProgress(); renderQuests(); checkMilestones(); updateEconomy();
