@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PokéÁlbum · Generación I</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=swap">
+<link rel="stylesheet" href="main.css">
+</head>
+<body>
+<header class="top">
+  <h1>PokéÁlbum <small>Kanto</small></h1>
+  <div class="prog" role="group" aria-label="Progreso del álbum">
+    <div class="bar"><span id="fill"></span></div>
+    <p id="progText">0 / 151</p>
+  </div>
+  <nav aria-label="Secciones">
+    <button data-tab="packs" aria-current="page">Sobres <b id="packN">0</b></button>
+    <button data-tab="album">Álbum <b id="stickerN">0</b></button>
+  </nav>
+</header>
+<main>
+  <section id="packs" aria-labelledby="h-packs">
+    <h2 id="h-packs">Abre un sobre</h2>
+    <button id="packBtn" class="pack"><span>Sobre Kanto</span><small>5 cartas</small></button>
+    <p id="timer" class="muted"></p>
+  </section>
+  <section id="album" hidden aria-labelledby="h-album">
+    <div class="album-heading">
+      <div class="album-title"><p>GUÍA DE CAMPO · REGIÓN KANTO</p><h2 id="h-album">Álbum de Kanto</h2></div>
+      <button id="clearCollection" class="clear-collection" type="button" disabled>Vaciar colección</button>
+    </div>
+    <div class="collection-state"><h3>Pegadas en el álbum</h3><span><b id="placedCount">0</b> de 151</span></div>
+    <div class="bookbar" role="group" aria-label="Navegación del álbum">
+      <button id="prevPage" aria-label="Página anterior">←</button>
+      <p id="pageText" aria-live="polite"></p>
+      <button id="nextPage" aria-label="Página siguiente">→</button>
+    </div>
+    <div class="spread" aria-label="Páginas del álbum">
+      <section class="album-page" aria-label="Página izquierda"><h3 id="leftTitle"></h3><div id="leftSlots" class="slots"></div></section>
+      <section class="album-page" aria-label="Página derecha"><h3 id="rightTitle"></h3><div id="rightSlots" class="slots"></div></section>
+    </div>
+    <section class="stash" aria-labelledby="stashTitle">
+      <div class="stash-head"><h3 id="stashTitle">Por pegar <b id="looseCount">0</b></h3><p id="placementHint">Clic: ver detalle · doble clic: pegar en el álbum.</p></div>
+      <div id="stickerStock" class="stock"></div>
+      <p id="stockEmpty" class="muted">Tu reserva está vacía. Abre un sobre para conseguir estampas.</p>
+    </section>
+    <section class="repeats" aria-labelledby="repeatedTitle">
+      <div class="stash-head"><h3 id="repeatedTitle">Repetidas <b id="repeatedCount">0</b></h3><p>Copias extra y de especies que ya están pegadas.</p></div>
+      <div id="repeatedStock" class="stock"></div>
+      <p id="repeatedEmpty" class="muted">Aún no tienes estampas repetidas.</p>
+    </section>
+  </section>
+</main>
+<div id="reveal" class="reveal" hidden role="dialog" aria-modal="true" aria-label="Apertura de sobre">
+  <div id="cards" class="cards"></div>
+  <div class="row"><button id="close" hidden>Continuar</button></div>
+</div>
+<dialog id="detail"><form method="dialog"><div id="detailBody"></div><button id="placeSticker" type="button" hidden>Pegar en el álbum</button><button id="removeSticker" type="button" hidden>Quitar estampa</button><button>Cerrar</button></form></dialog>
+<p id="live" class="sr" aria-live="polite"></p>
+<script src="app.js"></script>
+</body>
+</html>
