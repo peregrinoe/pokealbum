@@ -1,14 +1,15 @@
 'use strict';
 const API='https://pokeapi.co/api/v2/pokemon/', TOTAL=151, LEG=[144,145,146,150,151], REGEN=10*60*1000, MAXP=5;
-const UNLIMITED_PACKS=true;
+const PROFILES={normal:{baseShinyChance:.04,unlimited:false},test:{baseShinyChance:.5,unlimited:true}};
 const ART=id=>`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 const SHINY_ART=id=>`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png`;
 const imageFor=(p,shiny=false)=>shiny?(p.shinyArt||SHINY_ART(p.id)):(p.art||ART(p.id));
 const $=s=>document.querySelector(s), rnd=n=>Math.floor(Math.random()*n);
 const KEY='pokealbum-v2';
-let S={packs:3,last:Date.now(),owned:{},stickers:{},shinyOwned:{},shinyStickers:{}};
+let S={packs:3,last:Date.now(),owned:{},stickers:{},shinyOwned:{},shinyStickers:{},profile:'normal'};
 try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)))}catch{}
 S.owned ||= {}; S.stickers ||= {}; S.shinyOwned ||= {}; S.shinyStickers ||= {};
+if(!PROFILES[S.profile])S.profile='normal';
 Object.keys(S.owned).forEach(id=>{
   const extra=Math.max(0,Number(S.owned[id])-1);
   if(extra){S.stickers[id]=(S.stickers[id]||0)+extra;S.owned[id]=1}
@@ -62,6 +63,8 @@ async function info(id){
 }
 const rarity=p=>LEG.includes(p.id)?'legendary':p.bst>=500?'rare':p.bst>=400?'uncommon':'common';
 const RL={common:'Común',uncommon:'Poco común',rare:'Rara',legendary:'Legendaria'};
+const shinyChance=(profile=S.profile)=>PROFILES[profile].baseShinyChance;
+const TYPE_LABELS={normal:'Normal',fire:'Fuego',water:'Agua',electric:'Eléctrico',grass:'Planta',ice:'Hielo',fighting:'Lucha',poison:'Veneno',ground:'Tierra',flying:'Volador',psychic:'Psíquico',bug:'Bicho',rock:'Roca',ghost:'Fantasma',dragon:'Dragón',dark:'Siniestro',steel:'Acero',fairy:'Hada'};
 const TYPE_THEMES={
   normal:['#8c8864','#eeecd9'],fire:['#d94830','#fbe1c5'],water:['#2075d8','#dceeff'],electric:['#a87300','#fff1a8'],
   grass:['#29964e','#e1f2d9'],ice:['#4f9fa8','#e0f4f3'],fighting:['#a32e24','#f7ded9'],poison:['#863b94','#f0e0f3'],
@@ -77,9 +80,12 @@ function applyTypeTheme(element,type){
 
 // --- Sobres ---
 function tick(){
-  if(UNLIMITED_PACKS){
+  document.querySelectorAll('.profile-switch button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.profile===S.profile)));
+  const activeProfile=PROFILES[S.profile];
+  if(activeProfile.unlimited){
+    S.last=Date.now();
     $('#packN').textContent='∞'; $('#packBtn').disabled=false;
-    $('#timer').textContent='Modo de prueba: sobres ilimitados · 50% shiny por carta.';
+    $('#timer').textContent='Pruebas: sobres ilimitados · 50% shiny por carta.';
     save(); return;
   }
   const n=Date.now();
@@ -88,24 +94,26 @@ function tick(){
   $('#packN').textContent=S.packs;
   const b=$('#packBtn'); b.disabled=S.packs<1;
   const left=Math.max(0,REGEN-(n-S.last)), m=Math.floor(left/6e4), s=Math.floor(left%6e4/1e3);
-  $('#timer').textContent=S.packs>=MAXP?'Tienes el máximo de sobres.':`Próximo sobre gratis en ${m}:${String(s).padStart(2,'0')}`;
+  const shinyLabel=`Shiny: ${Math.round(shinyChance()*100)}% por carta, sin importar la rareza.`;
+  $('#timer').textContent=S.packs>=MAXP?`Tienes ${S.packs} sobres disponibles. ${shinyLabel}`:`Próximo sobre gratis en ${m}:${String(s).padStart(2,'0')} · ${shinyLabel}`;
   save();
 }
 const draw=()=>Array.from({length:5},(_,i)=>Math.random()<(i===4?.15:.04)?LEG[rnd(5)]:1+rnd(TOTAL));
 
 async function openPack(){
-  if(!UNLIMITED_PACKS&&S.packs<1)return;
+  const activeProfile=PROFILES[S.profile];
+  if(!activeProfile.unlimited&&S.packs<1)return;
   const ids=draw();
-  if(!UNLIMITED_PACKS){S.packs--;save();tick()}
+  if(!activeProfile.unlimited){S.packs--;save();tick()}
   const box=$('#cards'); box.innerHTML='<p>Abriendo sobre…</p>'; $('#reveal').hidden=false;
   let list;
   try{list=await Promise.all(ids.map(info))}
-  catch{if(!UNLIMITED_PACKS){S.packs++;save();tick()}box.innerHTML='<p>No se pudo conectar con la PokeAPI. Tu sobre no se gastó; inténtalo de nuevo.</p>';
+  catch{if(!activeProfile.unlimited){S.packs++;save();tick()}box.innerHTML='<p>No se pudo conectar con la PokeAPI. Tu sobre no se gastó; inténtalo de nuevo.</p>';
     $('#close').hidden=false;$('#close').textContent='Cerrar';return}
   box.innerHTML=''; $('#close').hidden=false; $('#close').textContent='Continuar';
   const seen=new Set();
   list.forEach(p=>{
-    p.shiny=Math.random()<.5;
+    p.shiny=Math.random()<shinyChance(S.profile);
     const owned=p.shiny?S.shinyOwned:S.owned, inventory=p.shiny?S.shinyStickers:S.stickers;
     const variant=`${p.id}-${p.shiny?'shiny':'normal'}`;
     const isNew=!owned[p.id]&&!inventory[p.id]&&!seen.has(variant); seen.add(variant);
@@ -131,6 +139,10 @@ async function openPack(){
 }
 $('#close').onclick=()=>{$('#reveal').hidden=true;renderAlbum();$('#packBtn').focus()};
 $('#packBtn').onclick=openPack;
+document.querySelectorAll('.profile-switch button').forEach(b=>b.onclick=()=>{
+  S.profile=b.dataset.profile; if(S.profile==='test')S.last=Date.now();
+  save(); tick(); say(S.profile==='test'?'Perfil de pruebas activado.':'Perfil normal activado.');
+});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#reveal').hidden&&!$('#close').hidden)$('#close').click()});
 
 // --- Álbum y reserva de estampas ---
@@ -156,8 +168,8 @@ function renderSide(target,firstId){
     b.setAttribute('aria-label',has?`Espacio ${id}, ${cache[id]?.name||'estampa pegada'}`:
       selectedSticker?`Espacio vacío ${id}. Toca para pegar la estampa seleccionada`:`Espacio vacío ${id}`);
     if(has){
-      b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="slot-no">#${String(id).padStart(3,'0')}</span><span class="nm">${cache[id]?.name||' '}</span>${shiny?'<span class="shine-mark">SHINY</span>':''}`;
-      info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Espacio ${id}, ${shiny?'shiny ':''}${p.name}, estampa pegada`)}).catch(()=>{});
+      b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="slot-no">#${String(id).padStart(3,'0')}</span><span class="nm">${cache[id]?.name||' '}</span><span class="type-label"></span>${shiny?'<span class="shine-mark">SHINY</span>':''}`;
+      info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img'),type=b.querySelector('.type-label');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);if(type)type.textContent=TYPE_LABELS[p.types[0]]||p.types[0];applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Espacio ${id}, ${shiny?'shiny ':''}${p.name}, tipo ${TYPE_LABELS[p.types[0]]||p.types[0]}, estampa pegada`)}).catch(()=>{});
       b.onclick=()=>showDetail(id,shiny);
     }else{
       b.tabIndex=-1;
@@ -232,8 +244,8 @@ function renderStock(){
     b.draggable=true; b.title='Clic para ver; doble clic para pegar; arrastra al espacio.';
     b.setAttribute('aria-pressed',String(id===selectedSticker?.id&&shiny===selectedSticker?.shiny));
     b.setAttribute('aria-label',`Estampa ${shiny?'shiny ':''}número ${id}, cantidad ${count}`);
-    b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="loose-no">#${String(id).padStart(3,'0')}</span><span class="nm">…</span>${shiny?'<span class="shine-mark">SHINY</span>':''}<em>×${count}</em>`;
-    info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Estampa ${shiny?'shiny ':''}${p.name}, ${count} en reserva`)}).catch(()=>{});
+    b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="loose-no">#${String(id).padStart(3,'0')}</span><span class="nm">…</span><span class="type-label"></span>${shiny?'<span class="shine-mark">SHINY</span>':''}<em>×${count}</em>`;
+    info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img'),type=b.querySelector('.type-label');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);if(type)type.textContent=TYPE_LABELS[p.types[0]]||p.types[0];applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Estampa ${shiny?'shiny ':''}${p.name}, tipo ${TYPE_LABELS[p.types[0]]||p.types[0]}, ${count} en reserva`)}).catch(()=>{});
     b.onclick=()=>{
       clearTimeout(stickerClickTimer);
       stickerClickTimer=setTimeout(()=>{stickerClickTimer=null;showDetail(id,shiny)},DETAIL_DELAY);
@@ -276,8 +288,8 @@ function renderRepeated(){
     b.classList.toggle('shiny',shiny);
     b.classList.toggle('shine-offer',shiny&&!!S.owned[id]&&!S.shinyOwned[id]);
     b.setAttribute('aria-label',`Estampa repetida ${shiny?'shiny ':''}número ${id}, cantidad ${count}`);
-    b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="loose-no">#${String(id).padStart(3,'0')}</span><span class="nm">…</span>${shiny?'<span class="shine-mark">SHINY</span>':''}<span class="repeat-tag">REPETIDA</span><em>×${count}</em>`;
-    info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Estampa repetida ${shiny?'shiny ':''}${p.name}, ${count} en reserva`)}).catch(()=>{});
+    b.innerHTML=`<img loading="lazy" alt="" src="${shiny?SHINY_ART(id):ART(id)}"><span class="loose-no">#${String(id).padStart(3,'0')}</span><span class="nm">…</span><span class="type-label"></span>${shiny?'<span class="shine-mark">SHINY</span>':''}<span class="repeat-tag">REPETIDA</span><em>×${count}</em>`;
+    info(id).then(p=>{const name=b.querySelector('.nm'),img=b.querySelector('img'),type=b.querySelector('.type-label');if(name)name.textContent=p.name;if(img)img.src=imageFor(p,shiny);if(type)type.textContent=TYPE_LABELS[p.types[0]]||p.types[0];applyTypeTheme(b,p.types[0]);b.setAttribute('aria-label',`Estampa repetida ${shiny?'shiny ':''}${p.name}, tipo ${TYPE_LABELS[p.types[0]]||p.types[0]}, ${count} en reserva`)}).catch(()=>{});
     b.onclick=()=>showDetail(id,shiny);
     b.addEventListener('dblclick',()=>{
       clearTimeout(stickerClickTimer); stickerClickTimer=null;
