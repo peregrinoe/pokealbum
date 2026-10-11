@@ -5,18 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PokéÁlbum · Generación I</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=swap">
-<link rel="stylesheet" href="main.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{--felt:#1d3a33;--felt2:#15292a;--paper:#f1f3ee;--ink:#14211d;--red:#d8392f;--gold:#e3b23c;--blue:#4a8fd6;--muted:#9fb3aa;--r:14px}
+*{box-sizing:border-box}html{color-scheme:dark}
+body{margin:0;min-height:100vh;background-color:#202b32;background-image:radial-gradient(ellipse at 50% 0,#35434b,#202b32 68%);color:var(--paper);font:400 1rem/1.5 "Atkinson Hyperlegible",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2,.pack span{font-family:"Bricolage Grotesque",system-ui,sans-serif}h1{margin:0;font-size:1.4rem;font-weight:800}h1 small{color:var(--gold);font-weight:600}h2{font-size:1.5rem;margin:0 0 1rem}
+button{font:inherit;color:inherit;cursor:pointer;min-height:44px;min-width:44px}:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.muted{color:var(--muted)}
+.top{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:1fr auto;gap:.5rem 1rem;align-items:center;padding:.75rem 1rem;background:#0f1d1ccc;backdrop-filter:blur(8px)}
+.prog{grid-column:1/-1;display:flex;align-items:center;gap:.75rem}.prog p{margin:0;white-space:nowrap}.bar{flex:1;height:10px;border-radius:9px;background:#ffffff22;overflow:hidden}#fill{display:block;height:100%;width:0;background:hsl(var(--progress-hue,0) 76% 52%);transition:width .5s,background-color .5s}
+nav{display:flex;gap:.25rem}nav button{border:1px solid #ffffff33;background:none;padding:.4rem .9rem;border-radius:99px}[aria-current=page],[aria-pressed=true]{background:var(--paper)!important;color:var(--ink)!important}nav b{background:var(--red);color:#fff;border-radius:99px;padding:0 .45rem;margin-left:.25rem}
+main{max-width:1100px;margin:auto;padding:1.5rem 1rem 3rem}
+#packs{position:relative;left:50%;width:100vw;max-width:none;min-height:calc(100svh - 5rem);margin:-1.5rem 0 -3rem -50vw;padding:2rem 1rem 3rem;display:grid;align-content:center;justify-items:center;text-align:center;gap:.8rem;overflow:hidden;background-color:#26343c;background-image:repeating-radial-gradient(ellipse at 50% 46%,transparent 0 42px,#e9d9b012 43px 44px,transparent 45px 82px),linear-gradient(145deg,#2a3941,#202a31);border-top:1px solid #c89e50;border-bottom:1px solid #c89e50}
+#packs[hidden],#quests[hidden],#album[hidden]{display:none}
+#packs .profile-switch{position:relative;z-index:1;display:flex;gap:3px;padding:3px;border:1px solid #c89e5099;border-radius:6px;background:#111a20aa}#packs .profile-switch button{min-height:36px;border:0;border-radius:4px;background:transparent;color:#f4dfb4;padding:.35rem .9rem;font-size:.86rem;font-weight:700}#packs .profile-switch button[aria-pressed="true"]{background:#d7ad4e!important;color:#261d0d!important}
+#packs h2{position:relative;z-index:1;margin:0 0 .35rem;color:#fff0d1;font-size:1.8rem;text-shadow:0 2px 18px #0008}
+.pack{position:relative;isolation:isolate;width:min(250px,68vw);aspect-ratio:3/4.2;padding:5.5rem .75rem 1.4rem;border:0;border-radius:10px;background:linear-gradient(158deg,#df4033 0 43%,#f2c45b 43% 48%,#2c64a5 48% 100%);color:#fff;display:grid;align-content:center;justify-items:center;gap:.2rem;box-shadow:0 24px 52px #10171dbb,inset 0 0 0 2px #f5d98e,inset 0 0 0 6px #ffffff19;clip-path:polygon(0 3%,5% 0,10% 3%,15% 0,20% 3%,25% 0,30% 3%,35% 0,40% 3%,45% 0,50% 3%,55% 0,60% 3%,65% 0,70% 3%,75% 0,80% 3%,85% 0,90% 3%,95% 0,100% 3%,100% 97%,95% 100%,90% 97%,85% 100%,80% 97%,75% 100%,70% 97%,65% 100%,60% 97%,55% 100%,50% 97%,45% 100%,40% 97%,35% 100%,30% 97%,25% 100%,20% 97%,15% 100%,10% 97%,5% 100%,0 97%);transition:transform .24s,filter .24s}
+.pack::before{position:absolute;z-index:-1;inset:0;background:repeating-linear-gradient(135deg,#ffffff24 0 1px,transparent 1px 8px),linear-gradient(110deg,transparent 15%,#ffffff20 34%,transparent 50%);content:"";opacity:.58}.pack::after{position:absolute;top:15%;left:50%;width:72px;aspect-ratio:1;transform:translateX(-50%);border:3px solid #f5d98e;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 6px,#26343c 6.5px 9px,transparent 9.5px),linear-gradient(180deg,#ffffff1c 0 46%,#26343c 47% 53%,#ffffffde 54% 100%);box-shadow:0 0 0 4px #26343c66,0 4px 15px #1c172555;content:""}
+.pack span,.pack small{position:relative;z-index:1;text-shadow:0 2px 8px #171d27aa}.pack span{font-size:1.5rem;font-weight:800}.pack small{font-size:.9rem;font-weight:700}.pack:disabled{filter:grayscale(.9) brightness(.6);cursor:not-allowed}
+#timer{position:relative;z-index:1;max-width:min(100%,30rem);margin:.15rem 0 0;padding:.4rem .8rem;border:1px solid #f0d28b55;border-radius:4px;background:#111a20aa;color:#f4dfb4;font-size:.85rem;line-height:1.4}
+</style>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=optional" onload="this.onload=null;this.rel='stylesheet'">
+<link rel="preload" as="style" href="main.css" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="main.css"></noscript>
 </head>
 <body>
 <header class="top">
   <h1>PokéÁlbum <small>Kanto</small></h1>
   <div class="prog" role="group" aria-label="Progreso del álbum">
-    <div class="bar"><span id="fill"></span></div>
+    <div class="bar" role="progressbar" aria-label="Progreso del álbum" aria-valuemin="0" aria-valuemax="151" aria-valuenow="0"><span id="fill"></span></div>
     <p id="progText">0 / 151</p>
+    <p id="coinPill" class="coin-pill" aria-label="Monedas disponibles"><span class="coin-ic" aria-hidden="true"></span><b class="coin-count" id="coinCount">0</b></p>
   </div>
   <nav aria-label="Secciones">
     <button data-tab="packs" aria-current="page">Sobres <b id="packN">0</b></button>
+    <button data-tab="quests">Retos <b id="questN">0</b></button>
     <button data-tab="album">Álbum <b id="stickerN">0</b></button>
   </nav>
 </header>
@@ -27,8 +50,20 @@
       <button type="button" data-profile="test" aria-pressed="false">Pruebas</button>
     </div>
     <h2 id="h-packs">Abre un sobre</h2>
-    <button id="packBtn" class="pack"><span>Sobre Kanto</span><small>5 cartas</small></button>
+    <button id="packBtn" class="pack"><span>Sobre Kanto</span><small id="packPrice">5 cartas · 100 monedas</small></button>
     <p id="timer" class="muted"></p>
+  </section>
+  <section id="quests" hidden aria-labelledby="h-quests">
+    <div class="quests-inner">
+      <header class="quests-heading"><p>ENCARGOS · REGIÓN KANTO</p><h2 id="h-quests">Retos de entrenador</h2></header>
+      <section class="daily-card" aria-labelledby="dailyTitle">
+        <div class="daily-info"><p class="quests-kicker">RECOMPENSA DIARIA</p><h3 id="dailyTitle">Bono de inicio</h3><p id="dailyText"></p><p id="streakText" class="streak"></p></div>
+        <button id="dailyBtn" type="button">Reclamar bono</button>
+      </section>
+      <section class="quest-group" aria-labelledby="missionTitle"><h3 id="missionTitle">Misiones de hoy</h3><ul id="missionList" class="mission-list"></ul></section>
+      <section class="quest-group minigames" aria-labelledby="gameTitle"><h3 id="gameTitle">Minijuegos diarios</h3><ul id="gameList" class="game-list"></ul><div id="gamePlay" class="game-play" hidden></div></section>
+      <section class="quest-group milestones-group" aria-labelledby="milestoneTitle"><h3 id="milestoneTitle">Hitos de colección</h3><ul id="milestoneList" class="milestone-list"></ul></section>
+    </div>
   </section>
   <section id="album" hidden aria-labelledby="h-album">
     <div class="album-heading">
@@ -46,7 +81,7 @@
       <section class="album-page" aria-label="Página derecha"><h3 id="rightTitle"></h3><div id="rightSlots" class="slots"></div></section>
     </div>
     <section class="stash" aria-labelledby="stashTitle">
-      <div class="stash-head"><h3 id="stashTitle">Por pegar <b id="looseCount">0</b></h3><p id="placementHint">Clic: ver detalle · doble clic: pegar en el álbum.</p></div>
+      <div class="stash-head"><h3 id="stashTitle">Por pegar <b id="looseCount">0</b></h3><p id="placementHint">Clic: ver detalle · doble clic: pegar en el álbum.</p><button id="placeAll" class="place-all" type="button" disabled>Pegar todo</button></div>
       <div id="stickerStock" class="stock"></div>
       <p id="stockEmpty" class="muted">Tu reserva está vacía. Abre un sobre para conseguir estampas.</p>
     </section>
@@ -61,8 +96,9 @@
   <div id="cards" class="cards"></div>
   <div class="row"><button id="close" hidden>Continuar</button></div>
 </div>
-<dialog id="detail"><form method="dialog"><div id="detailBody"></div><button id="placeSticker" type="button" hidden>Pegar en el álbum</button><button id="removeSticker" type="button" hidden>Quitar estampa</button><button>Cerrar</button></form></dialog>
+<div id="toast" class="toast" aria-live="polite" aria-atomic="true"></div>
+<dialog id="detail"><form method="dialog"><div id="detailBody"></div><div class="detail-actions"><button id="placeSticker" type="button" hidden>Pegar en el álbum</button><button id="removeSticker" type="button" hidden>Quitar estampa</button><button class="detail-close">Cerrar</button></div></form></dialog>
 <p id="live" class="sr" aria-live="polite"></p>
-<script src="app.js"></script>
+<script src="app.js" defer></script>
 </body>
 </html>
